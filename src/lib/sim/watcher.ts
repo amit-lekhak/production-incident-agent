@@ -2,10 +2,6 @@ import { appendIncidentEvent } from "@/lib/observability/incident-events";
 import { sql } from "@/lib/db";
 import { getServiceId } from "./faults";
 
-function jsonb(value: unknown) {
-  return sql`${JSON.stringify(value)}::jsonb`;
-}
-
 export type WatchResult =
   | { opened: false; reason: string; incidentId?: string }
   | {
