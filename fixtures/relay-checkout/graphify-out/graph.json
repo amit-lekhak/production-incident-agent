@@ -1,0 +1,141 @@
+{
+  "nodes": [
+    {
+      "id": "checkout",
+      "kind": "function",
+      "name": "checkout",
+      "file": "src/checkout.ts",
+      "line": 8,
+      "summary": "Healthy checkout: batch catalog lookups then charge payment"
+    },
+    {
+      "id": "lookupProduct",
+      "kind": "function",
+      "name": "lookupProduct",
+      "file": "src/catalog.ts",
+      "line": 8,
+      "summary": "Single product catalog DB lookup (~8ms)"
+    },
+    {
+      "id": "lookupProductNPlusOne",
+      "kind": "function",
+      "name": "lookupProductNPlusOne",
+      "file": "src/catalog.ts",
+      "line": 18,
+      "summary": "Slow per-item catalog lookup introduced by deploy abc123 (N+1)"
+    },
+    {
+      "id": "chargePayment",
+      "kind": "function",
+      "name": "chargePayment",
+      "file": "src/payments.ts",
+      "line": 1,
+      "summary": "Healthy payments charge (~40ms)"
+    },
+    {
+      "id": "chargePaymentSlow",
+      "kind": "function",
+      "name": "chargePaymentSlow",
+      "file": "src/payments.ts",
+      "line": 9,
+      "summary": "Slow payments path used by payment_timeout scenario"
+    },
+    {
+      "id": "file:checkout",
+      "kind": "file",
+      "name": "src/checkout.ts",
+      "file": "src/checkout.ts",
+      "line": 1,
+      "summary": "Checkout entrypoint"
+    },
+    {
+      "id": "file:catalog",
+      "kind": "file",
+      "name": "src/catalog.ts",
+      "file": "src/catalog.ts",
+      "line": 1,
+      "summary": "Catalog lookups"
+    },
+    {
+      "id": "file:payments",
+      "kind": "file",
+      "name": "src/payments.ts",
+      "file": "src/payments.ts",
+      "line": 1,
+      "summary": "Payments client"
+    }
+  ],
+  "edges": [
+    {
+      "from": "checkout",
+      "to": "lookupProduct",
+      "rel": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "checkout",
+      "to": "chargePayment",
+      "rel": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "lookupProductNPlusOne",
+      "to": "lookupProduct",
+      "rel": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "chargePaymentSlow",
+      "to": "chargePayment",
+      "rel": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:checkout",
+      "to": "checkout",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:catalog",
+      "to": "lookupProduct",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:catalog",
+      "to": "lookupProductNPlusOne",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:payments",
+      "to": "chargePayment",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:payments",
+      "to": "chargePaymentSlow",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:checkout",
+      "to": "file:catalog",
+      "rel": "imports",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:checkout",
+      "to": "file:payments",
+      "rel": "imports",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "meta": {
+    "source": "fixtures/relay-checkout",
+    "generator": "checked-in graph for demos (graphify CLI optional via pnpm graph:rebuild)",
+    "tokenNote": "Agents must query via code tools with budget; never dump this file into prompts"
+  }
+}

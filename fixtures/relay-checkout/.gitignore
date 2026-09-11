@@ -5,9 +5,12 @@ yarn.lock
 .next/
 dist/
 coverage/
-graphify-out/
 .env
 .env.*
 *.png
 *.jpg
 evals/results/
+# Keep checked-in graph.json; ignore other graphify artifacts
+graphify-out/*
+!graphify-out/graph.json
+
