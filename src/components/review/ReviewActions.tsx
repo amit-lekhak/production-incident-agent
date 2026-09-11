@@ -1,0 +1,75 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+export function ReviewActions({ incidentId }: { incidentId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function decide(decision: "approved" | "rejected" | "more_evidence") {
+    setBusy(decision);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ incidentId, decision, note }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "review failed");
+      setMsg(JSON.stringify(json));
+      router.refresh();
+      if (json.postmortemId) {
+        router.push(`/postmortems/${json.postmortemId}`);
+      }
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Optional note"
+        className="w-full rounded-lg border border-[var(--line)] bg-[var(--background)] p-2 text-sm"
+        rows={2}
+      />
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void decide("approved")}
+          className="rounded-lg bg-[var(--ok)] px-3 py-2 text-sm font-semibold text-[#052e1c] disabled:opacity-50"
+        >
+          {busy === "approved" ? "Working…" : "Approve"}
+        </button>
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void decide("more_evidence")}
+          className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm disabled:opacity-50"
+        >
+          More evidence
+        </button>
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void decide("rejected")}
+          className="rounded-lg border border-[var(--danger)] px-3 py-2 text-sm text-[var(--danger)] disabled:opacity-50"
+        >
+          Reject
+        </button>
+      </div>
+      {msg ? (
+        <pre className="overflow-auto text-xs text-[var(--muted)]">{msg}</pre>
+      ) : null}
+    </div>
+  );
+}
