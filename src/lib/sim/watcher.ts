@@ -1,3 +1,4 @@
+import { appendIncidentEvent } from "@/lib/observability/incident-events";
 import { sql } from "@/lib/db";
 import { getServiceId } from "./faults";
 
@@ -74,15 +75,12 @@ export async function runWatcher(): Promise<WatchResult[]> {
     `;
 
     if (existing) {
-      await sql`
-        INSERT INTO incident_events (incident_id, kind, message, meta)
-        VALUES (
-          ${existing.id}::uuid,
-          'alert_repeat',
-          ${`Alert ${rule.name} still firing (${sample.value})`},
-          ${jsonb({ metric: rule.metric, value: sample.value })}
-        )
-      `;
+      await appendIncidentEvent({
+        incidentId: existing.id,
+        kind: "alert_repeat",
+        message: `Alert ${rule.name} still firing (${sample.value})`,
+        meta: { metric: rule.metric, value: sample.value },
+      });
       results.push({
         opened: false,
         reason: "deduped",
@@ -118,15 +116,16 @@ export async function runWatcher(): Promise<WatchResult[]> {
       RETURNING id::text AS id
     `;
 
-    await sql`
-      INSERT INTO incident_events (incident_id, kind, message, meta)
-      VALUES (
-        ${incident!.id}::uuid,
-        'detected',
-        ${`Watcher opened incident for ${rule.name}`},
-        ${jsonb({ metric: rule.metric, value: sample.value, deploy: deploy?.sha ?? null })}
-      )
-    `;
+    await appendIncidentEvent({
+      incidentId: incident!.id,
+      kind: "detected",
+      message: `Watcher opened incident for ${rule.name}`,
+      meta: {
+        metric: rule.metric,
+        value: sample.value,
+        deploy: deploy?.sha ?? null,
+      },
+    });
 
     results.push({
       opened: true,
