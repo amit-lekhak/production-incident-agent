@@ -43,5 +43,5 @@ Open http://localhost:3000
 
 ## Docs
 
-- [Architecture](diagrams/ARCHITECTURE.md) (added in hardening)
-- [docs/](docs/) Diataxis guides (added as the app lands)
+- [Architecture](diagrams/ARCHITECTURE.md)
+- [docs/](docs/) Diataxis guides

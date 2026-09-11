@@ -92,9 +92,8 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
 
   const fault = health.fault?.scenario ?? null;
   const activeSha = health.deploy?.sha ?? null;
-  const avgCatalog =
-    traces.rows.reduce((s, r) => s + r.catalogLookups, 0) /
-    Math.max(1, traces.rows.length);
+  const db = await tools.query_db_timings({ minutes: 15 });
+  const catalogAvgMs = db.catalogAvgMs;
 
   let cause: HypothesesOutput["hypotheses"][0]["cause_type"] = "unknown";
   let action: RecommendationOutput["recommended_action"] = "page_human";
@@ -102,13 +101,8 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   let confidence = 55;
   let why = "Insufficient signal";
 
-  if (fault === "n_plus_one" || avgCatalog >= 3) {
-    cause = "n_plus_one";
-    action = "rollback";
-    target = activeSha ?? "abc123nplus1";
-    confidence = 87;
-    why = `catalog.lookup×${avgCatalog.toFixed(1)} per request after deploy ${activeSha}; similar: ${similar.display}`;
-  } else if (fault === "payment_timeout") {
+  // Prefer explicit active fault. Do not treat "3 catalog lookups" as N+1 — that is a normal cart size.
+  if (fault === "payment_timeout") {
     cause = "payment_timeout";
     action = "disable_flag";
     target = "payments_v2";
@@ -127,6 +121,12 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
     target = activeSha ?? "pool654cfg";
     confidence = 82;
     why = "db pool wait elevated after config deploy";
+  } else if (fault === "n_plus_one" || catalogAvgMs >= 200) {
+    cause = "n_plus_one";
+    action = "rollback";
+    target = activeSha ?? "abc123nplus1";
+    confidence = 87;
+    why = `catalog.lookup avg=${catalogAvgMs}ms after deploy ${activeSha}; similar: ${similar.display}`;
   }
 
   const hypotheses: HypothesesOutput = {
