@@ -6,21 +6,41 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:push": "tsx scripts/ensure-db.ts && drizzle-kit push --force",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:reset": "tsx scripts/seed.ts",
+    "graph:rebuild": "tsx scripts/rebuild-graph.ts",
+    "eval": "tsx evals/runner.ts",
+    "test": "tsx --test src/lib/agent/provider-errors.test.ts src/lib/codegraph/query.test.ts evals/oracle.test.ts"
   },
   "dependencies": {
+    "@ai-sdk/google": "^4.0.67",
+    "ai": "^7.0.97",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
     "next": "16.3.4",
+    "postgres": "^3.4.9",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.6.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^20.19.43",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   },
   "packageManager": "pnpm@11.1.3"

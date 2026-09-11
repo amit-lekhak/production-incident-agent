@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Relay Incident Agent
 
-## Getting Started
+AI production incident response over a **simulated** checkout service (Relay Checkout). Inject faults, watch alerts open incidents, let Gemini specialists diagnose with grounded tools, approve actions as a human, then verify and write a postmortem.
 
-First, run the development server:
+This is **not** a chatbot and does not talk to real Kubernetes / Prometheus / Grafana / Jira.
+
+## Prerequisites
+
+- Node 20+ and pnpm
+- Postgres 14+
+- Optional: `GEMINI_API_KEY`, Langfuse keys, Sentry DSN
+
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+cd production_incident_agent
+cp .env.example .env.local
+# set DATABASE_URL (default postgres://localhost:5432/relay_incident)
+createdb relay_incident   # if needed
+pnpm install
+pnpm db:push
+pnpm db:seed
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Demo loop
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. **/chaos** — inject `n_plus_one` (or other scenarios)
+2. Hit **/sim/checkout** or wait for the ticker — latency rises
+3. Watcher opens an incident when p95 > 2s
+4. Incident + Evidence agents propose a recommendation
+5. **/review** — approve / reject / request more evidence
+6. On approve, code rolls back (LLM never mutates), verifier checks metrics, postmortem is written
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+- `pnpm db:push` / `pnpm db:seed` — schema + seed world (includes a historical N+1 twin)
+- `pnpm graph:rebuild` — rebuild Graphify `graph.json` for the Relay fixture
+- `pnpm eval` — oracle + agent evals
+- `pnpm test` — unit tests
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Docs
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Architecture](diagrams/ARCHITECTURE.md) (added in hardening)
+- [docs/](docs/) Diataxis guides (added as the app lands)
