@@ -48,6 +48,13 @@ export async function injectFault(scenario: FaultScenario) {
     WHERE service_id = ${serviceId} AND active = true
   `;
 
+  // Drop recent samples so watcher window avg reflects the new fault quickly
+  await sql`
+    DELETE FROM metric_samples
+    WHERE service_id = ${serviceId}
+      AND sampled_at >= NOW() - INTERVAL '5 minutes'
+  `;
+
   await sql`
     UPDATE deployments SET status = 'rolled_back', rolled_back_at = NOW()
     WHERE service_id = ${serviceId} AND status = 'active'

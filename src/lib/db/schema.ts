@@ -234,6 +234,7 @@ export const incidents = pgTable(
   (t) => [
     index("incidents_status_idx").on(t.status),
     index("incidents_service_idx").on(t.serviceId),
+    // One open incident per alert rule (partial unique — applied in drizzle SQL migrate)
   ],
 );
 

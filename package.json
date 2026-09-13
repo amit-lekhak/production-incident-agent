@@ -14,7 +14,7 @@
     "db:reset": "tsx scripts/seed.ts",
     "graph:rebuild": "tsx scripts/rebuild-graph.ts",
     "eval": "tsx evals/runner.ts",
-    "test": "tsx --test src/lib/agent/provider-errors.test.ts src/lib/agent/pipeline.test.ts src/lib/agent/actions.test.ts src/lib/codegraph/query.test.ts evals/oracle.test.ts"
+    "test": "tsx --test src/lib/agent/provider-errors.test.ts src/lib/agent/pipeline.test.ts src/lib/agent/actions.test.ts src/lib/sim/watcher.test.ts src/lib/codegraph/query.test.ts evals/oracle.test.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.67",
