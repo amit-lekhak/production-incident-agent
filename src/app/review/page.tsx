@@ -15,6 +15,9 @@ export default async function ReviewPage() {
       confidence: number;
       summary: string;
       review_id: number;
+      pr_number: number | null;
+      pr_url: string | null;
+      pr_head_sha: string | null;
     }[]
   >`
     SELECT
@@ -25,7 +28,10 @@ export default async function ReviewPage() {
       r.action_target,
       r.confidence,
       r.summary,
-      v.id AS review_id
+      v.id AS review_id,
+      r.pr_number,
+      r.pr_url,
+      r.pr_head_sha
     FROM reviews v
     JOIN incidents i ON i.id = v.incident_id
     JOIN recommendations r ON r.id = v.recommendation_id
@@ -38,7 +44,8 @@ export default async function ReviewPage() {
       <header>
         <h1 className="text-2xl font-semibold">Review queue</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Humans approve actions. The LLM never mutates deploys or flags.
+          Approve merges the remediation PR and redeploys. The LLM never mutates
+          git.
         </p>
       </header>
 
@@ -60,7 +67,8 @@ export default async function ReviewPage() {
                   </Link>
                   <div className="mt-1 text-sm">
                     <span className="badge bg-[#0c4a6e] text-[var(--accent)]">
-                      {row.recommended_action} → {row.action_target}
+                      {row.recommended_action} →{" "}
+                      {row.action_target.slice(0, 12)}
                     </span>
                     <span className="ml-2 badge bg-[var(--line)]">
                       {row.confidence}%
@@ -69,9 +77,29 @@ export default async function ReviewPage() {
                   <p className="mt-2 text-sm text-[var(--muted)]">
                     {row.summary}
                   </p>
+                  {row.pr_url ? (
+                    <p className="mt-2 text-sm">
+                      <a
+                        href={row.pr_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[var(--accent)] underline"
+                      >
+                        GitHub PR #{row.pr_number}
+                      </a>
+                      {row.pr_head_sha ? (
+                        <span className="ml-2 text-[var(--muted)]">
+                          head {row.pr_head_sha.slice(0, 12)}
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
                 </div>
               </div>
-              <ReviewActions incidentId={row.incident_id} />
+              <ReviewActions
+                incidentId={row.incident_id}
+                hasPr={Boolean(row.pr_number)}
+              />
             </div>
           ))}
         </div>

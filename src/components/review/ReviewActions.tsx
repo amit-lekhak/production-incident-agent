@@ -3,7 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function ReviewActions({ incidentId }: { incidentId: string }) {
+export function ReviewActions({
+  incidentId,
+  hasPr = false,
+}: {
+  incidentId: string;
+  hasPr?: boolean;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -19,7 +25,13 @@ export function ReviewActions({ incidentId }: { incidentId: string }) {
         body: JSON.stringify({ incidentId, decision, note }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "review failed");
+      if (!res.ok) {
+        const err =
+          typeof json.error === "object"
+            ? (json.error?.message ?? JSON.stringify(json.error))
+            : json.error;
+        throw new Error(err ?? "review failed");
+      }
       setMsg(JSON.stringify(json));
       router.refresh();
       if (json.postmortemId) {
@@ -48,7 +60,7 @@ export function ReviewActions({ incidentId }: { incidentId: string }) {
           onClick={() => void decide("approved")}
           className="rounded-lg bg-[var(--ok)] px-3 py-2 text-sm font-semibold text-[#052e1c] disabled:opacity-50"
         >
-          {busy === "approved" ? "Working…" : "Approve"}
+          {busy === "approved" ? "Working…" : hasPr ? "Merge PR" : "Approve"}
         </button>
         <button
           type="button"
@@ -64,7 +76,7 @@ export function ReviewActions({ incidentId }: { incidentId: string }) {
           onClick={() => void decide("rejected")}
           className="rounded-lg border border-[var(--danger)] px-3 py-2 text-sm text-[var(--danger)] disabled:opacity-50"
         >
-          Reject
+          {hasPr ? "Close PR" : "Reject"}
         </button>
       </div>
       {msg ? (

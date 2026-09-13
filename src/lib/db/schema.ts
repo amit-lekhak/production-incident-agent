@@ -287,9 +287,12 @@ export const recommendations = pgTable("recommendations", {
     .notNull()
     .default([]),
   recommendedAction: varchar("recommended_action", { length: 40 }).notNull(),
-  // rollback | disable_flag | restart | watch | page_human
+  // revert_pr | disable_flag | restart | watch | page_human
   actionTarget: varchar("action_target", { length: 120 }).notNull(),
   summary: text("summary").notNull(),
+  prNumber: integer("pr_number"),
+  prUrl: text("pr_url"),
+  prHeadSha: varchar("pr_head_sha", { length: 40 }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

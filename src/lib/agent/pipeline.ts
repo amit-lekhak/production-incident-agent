@@ -210,6 +210,58 @@ export async function runDiagnosisPipeline(
     RETURNING id
   `;
 
+  // Open revert PR for human merge — LLM never mutates.
+  if (recommendation.recommended_action === "revert_pr") {
+    try {
+      const { getReleaseProvider } = await import("@/lib/release");
+      const provider = getReleaseProvider();
+      const deploys = await provider.listDeployments(2);
+      const badSha = recommendation.action_target || deploys[0]?.sha || "";
+      const restoreSha = deploys[1]?.sha;
+      const pr = await provider.openRevertPr({
+        sha: badSha,
+        restoreSha,
+        title: `incident: revert deploy ${badSha.slice(0, 12)}`,
+        body: [
+          `Automated remediation for incident \`${incidentId}\`.`,
+          "",
+          recommendation.summary,
+          "",
+          `Suspect deploy: \`${badSha}\``,
+          restoreSha ? `Restore tree from: \`${restoreSha}\`` : "",
+          "",
+          "Approve in the review queue to merge this PR and redeploy production.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      });
+      await sql`
+        UPDATE recommendations
+        SET pr_number = ${pr.number},
+            pr_url = ${pr.url},
+            pr_head_sha = ${pr.headSha}
+        WHERE id = ${rec!.id}
+      `;
+      await appendIncidentEvent({
+        incidentId,
+        kind: "pr_opened",
+        message: `Opened revert PR #${pr.number}`,
+        meta: { prNumber: pr.number, prUrl: pr.url, headSha: pr.headSha },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await setIncidentStatus(incidentId, "needs_human", {
+        needsHumanReason: `pr_open_failed: ${message}`,
+      });
+      await appendIncidentEvent({
+        incidentId,
+        kind: "pr_open_failed",
+        message,
+      });
+      return { ok: false as const, status: "needs_human", error: message };
+    }
+  }
+
   await sql`
     INSERT INTO reviews (incident_id, recommendation_id, decision, reviewer)
     VALUES (${incidentId}::uuid, ${rec!.id}, 'pending', 'oncall')

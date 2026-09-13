@@ -32,7 +32,7 @@ export const recommendationSchema = z.object({
     }),
   ),
   recommended_action: z.enum([
-    "rollback",
+    "revert_pr",
     "disable_flag",
     "restart",
     "watch",

@@ -140,10 +140,11 @@ Gather evidence with tools.`,
       metadata: { incidentId: rt.incidentId },
     },
     system: `Choose recommended_action carefully:
-- n_plus_one / error_spike / pool_exhaustion → rollback with deploy sha as action_target
-- payment_timeout → disable_flag with action_target=payments_v2 (rollback would be wrong)
+- n_plus_one / error_spike / pool_exhaustion → revert_pr with live deploy sha as action_target
+- payment_timeout → disable_flag with action_target=payments_v2 (revert_pr would be wrong)
 - if unsure → page_human or watch
-Cite tool display strings in evidence. Never invent metric series.`,
+Cite tool display strings in evidence. Never invent metric series.
+Do not execute mutations — code will open a GitHub PR for revert_pr.`,
     prompt: `Hypotheses:
 ${JSON.stringify(hypotheses, null, 2)}
 

@@ -4,7 +4,7 @@ import {
   appendIncidentEvent,
   setIncidentStatus,
 } from "@/lib/observability/incident-events";
-import { executeApprovedAction } from "@/lib/agent/actions";
+import { closeRemediationPr, executeApprovedAction } from "@/lib/agent/actions";
 import {
   DiagnosisConflictError,
   runDiagnosisPipeline,
@@ -92,6 +92,7 @@ export async function POST(req: Request) {
 
   try {
     if (decision === "rejected") {
+      await closeRemediationPr(incidentId).catch(() => undefined);
       await setIncidentStatus(incidentId, "closed_rejected");
       return Response.json({ ok: true, status: "closed_rejected" });
     }
@@ -136,8 +137,7 @@ export async function POST(req: Request) {
         postmortem,
       });
     } catch (pmErr) {
-      const message =
-        pmErr instanceof Error ? pmErr.message : String(pmErr);
+      const message = pmErr instanceof Error ? pmErr.message : String(pmErr);
       console.error("[postmortem]", incidentId, pmErr);
       await setIncidentStatus(incidentId, "needs_human", {
         needsHumanReason: `postmortem_failed: ${message}`,
