@@ -23,45 +23,6 @@ export const services = pgTable("services", {
     .notNull(),
 });
 
-export const deployments = pgTable(
-  "deployments",
-  {
-    id: serial("id").primaryKey(),
-    serviceId: integer("service_id")
-      .notNull()
-      .references(() => services.id),
-    sha: varchar("sha", { length: 40 }).notNull(),
-    version: varchar("version", { length: 64 }).notNull(),
-    status: varchar("status", { length: 32 }).notNull(), // active | rolled_back | pending
-    summary: text("summary"),
-    deployedAt: timestamp("deployed_at", { withTimezone: true }).notNull(),
-    rolledBackAt: timestamp("rolled_back_at", { withTimezone: true }),
-  },
-  (t) => [
-    index("deployments_service_idx").on(t.serviceId),
-    uniqueIndex("deployments_sha_idx").on(t.sha),
-  ],
-);
-
-export const commits = pgTable(
-  "commits",
-  {
-    id: serial("id").primaryKey(),
-    serviceId: integer("service_id")
-      .notNull()
-      .references(() => services.id),
-    sha: varchar("sha", { length: 40 }).notNull(),
-    message: text("message").notNull(),
-    author: varchar("author", { length: 120 }).notNull(),
-    filesChanged: jsonb("files_changed")
-      .$type<string[]>()
-      .notNull()
-      .default([]),
-    committedAt: timestamp("committed_at", { withTimezone: true }).notNull(),
-  },
-  (t) => [uniqueIndex("commits_sha_idx").on(t.sha)],
-);
-
 export const alertRules = pgTable("alert_rules", {
   id: serial("id").primaryKey(),
   serviceId: integer("service_id")

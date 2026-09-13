@@ -1,8 +1,28 @@
 import "../src/lib/load-env";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { sql } from "../src/lib/db";
 
 function jsonb(value: unknown) {
   return sql`${JSON.stringify(value)}::jsonb`;
+}
+
+function loadBootstrapShas(): {
+  badNPlusOneSha?: string;
+  fixedNPlusOneSha?: string;
+  headSha?: string;
+} {
+  const marker = join(process.cwd(), "services/relay-checkout/.bootstrap-done");
+  if (!existsSync(marker)) return {};
+  try {
+    return JSON.parse(readFileSync(marker, "utf8")) as {
+      badNPlusOneSha?: string;
+      fixedNPlusOneSha?: string;
+      headSha?: string;
+    };
+  } catch {
+    return {};
+  }
 }
 
 async function wipe() {
@@ -23,8 +43,6 @@ async function wipe() {
       log_lines,
       metric_samples,
       alert_rules,
-      commits,
-      deployments,
       services
     RESTART IDENTITY CASCADE
   `;
@@ -33,85 +51,20 @@ async function wipe() {
 async function seed() {
   await wipe();
 
+  const shas = loadBootstrapShas();
+  const badSha = shas.badNPlusOneSha ?? "unknown-nplus1";
+  const fixedSha = shas.fixedNPlusOneSha ?? shas.headSha ?? "unknown-fixed";
+
   const [service] = await sql<{ id: number }[]>`
     INSERT INTO services (name, slug, description)
     VALUES (
       'Relay Checkout',
       'relay-checkout',
-      'Simulated checkout API used for incident response demos'
+      'Checkout API — commits/deploys live on GitHub, not in this DB'
     )
     RETURNING id
   `;
   const serviceId = service!.id;
-
-  await sql`
-    INSERT INTO deployments (service_id, sha, version, status, summary, deployed_at)
-    VALUES (
-      ${serviceId},
-      'def456healthy',
-      'v1.3.0',
-      'rolled_back',
-      'Baseline before N+1 regression',
-      NOW() - INTERVAL '14 days'
-    )
-  `;
-
-  await sql`
-    INSERT INTO deployments (service_id, sha, version, status, summary, deployed_at)
-    VALUES (
-      ${serviceId},
-      'aaa111stable',
-      'v1.4.2',
-      'active',
-      'Stable checkout with batched catalog lookups',
-      NOW() - INTERVAL '2 days'
-    )
-  `;
-
-  await sql`
-    INSERT INTO commits (service_id, sha, message, author, files_changed, committed_at)
-    VALUES
-      (
-        ${serviceId},
-        'aaa111stable',
-        'perf: batch catalog lookups in checkout',
-        'sam@relay.dev',
-        ${jsonb(["src/checkout.ts", "src/catalog.ts"])},
-        NOW() - INTERVAL '2 days'
-      ),
-      (
-        ${serviceId},
-        'abc123nplus1',
-        'feat: per-item product enrichment (introduces N+1)',
-        'dev@relay.dev',
-        ${jsonb(["src/checkout.ts", "src/catalog.ts"])},
-        NOW() - INTERVAL '30 minutes'
-      ),
-      (
-        ${serviceId},
-        'pay789timeout',
-        'feat: new payments retry path',
-        'pay@relay.dev',
-        ${jsonb(["src/payments.ts", "src/checkout.ts"])},
-        NOW() - INTERVAL '20 minutes'
-      ),
-      (
-        ${serviceId},
-        'err321null',
-        'fix: handle empty cart metadata',
-        'dev@relay.dev',
-        ${jsonb(["src/checkout.ts"])},
-        NOW() - INTERVAL '15 minutes'
-      ),
-      (
-        ${serviceId},
-        'pool654cfg',
-        'chore: shrink db pool to 2 for cost',
-        'ops@relay.dev',
-        ${jsonb(["src/checkout.ts"])},
-        NOW() - INTERVAL '10 minutes'
-      )
-  `;
 
   await sql`
     INSERT INTO alert_rules (service_id, name, metric, operator, threshold, window_seconds, enabled)
@@ -152,7 +105,7 @@ async function seed() {
       'high',
       'checkout_latency_p95',
       3200,
-      'def456healthy',
+      ${badSha},
       NOW() - INTERVAL '14 days',
       NOW() - INTERVAL '14 days' + INTERVAL '45 minutes',
       NOW() - INTERVAL '14 days' + INTERVAL '45 minutes'
@@ -166,9 +119,9 @@ async function seed() {
       ${hist!.id}::uuid,
       1,
       'n_plus_one',
-      'oldnplus1sha',
-      ${jsonb(["query_traces", "query_db_timings", "list_deployments"])},
-      'Catalog span count scaled with cart size after deploy; rollback restored p95.'
+      ${badSha},
+      ${jsonb(["query_traces", "query_db_timings", "list_deployments", "diff_deploys"])},
+      'Catalog span count scaled with cart size after deploy; revert PR restored p95.'
     )
     RETURNING id
   `;
@@ -190,13 +143,13 @@ async function seed() {
         },
         {
           tool: "list_deployments",
-          display: "deploy oldnplus1sha active at onset",
+          display: `deploy ${badSha.slice(0, 12)} active at onset`,
           supports: true,
         },
       ])},
-      'rollback',
-      'oldnplus1sha',
-      'Rollback cleared N+1 catalog lookups; latency returned under 300ms.'
+      'revert_pr',
+      ${badSha},
+      'Merged revert PR; latency returned under 300ms.'
     )
   `;
 
@@ -204,10 +157,10 @@ async function seed() {
     INSERT INTO actions (incident_id, kind, target, status, result, executed_at)
     VALUES (
       ${hist!.id}::uuid,
-      'rollback',
-      'oldnplus1sha',
+      'revert_pr',
+      ${badSha},
       'succeeded',
-      ${jsonb({ previousSha: "oldnplus1sha", activeSha: "def456healthy" })},
+      ${jsonb({ previousSha: badSha, restoredSha: fixedSha })},
       NOW() - INTERVAL '14 days' + INTERVAL '30 minutes'
     )
   `;
@@ -219,15 +172,15 @@ async function seed() {
     VALUES (
       ${hist!.id}::uuid,
       'Postmortem: N+1 catalog lookups in checkout',
-      'A deploy switched checkout to per-item catalog lookups. p95 crossed 2s. Rollback restored SLOs.',
+      'A deploy switched checkout to per-item catalog lookups. p95 crossed 2s. Revert PR restored SLOs.',
       ${jsonb([
         { at: "-14d", event: "Deploy shipped per-item enrichment" },
         { at: "-14d+5m", event: "Latency alert fired" },
-        { at: "-14d+30m", event: "Rollback approved and executed" },
+        { at: "-14d+30m", event: "Revert PR approved and merged" },
       ])},
       'N+1 product lookups in checkout path after enrichment feature.',
       'Elevated checkout latency for ~30 minutes; no payment failures.',
-      'Rolled back to previous deploy; added eval for catalog span count vs cart size.',
+      'Merged revert PR to previous deploy; added eval for catalog span count vs cart size.',
       ${jsonb([
         "Add span budget alert for catalog.lookup count",
         "Require load test for cart-size scaling before merge",
@@ -239,11 +192,14 @@ async function seed() {
     INSERT INTO incident_events (incident_id, kind, message, meta)
     VALUES
       (${hist!.id}::uuid, 'detected', 'Alert Checkout latency p95 fired', ${jsonb({})}),
-      (${hist!.id}::uuid, 'resolved', 'Rollback verified; incident closed', ${jsonb({})})
+      (${hist!.id}::uuid, 'resolved', 'Revert PR merged; incident closed', ${jsonb({})})
   `;
 
   console.log(`Seeded Relay Checkout service id=${serviceId}`);
   console.log(`Historical twin incident id=${hist!.id}`);
+  console.log(
+    `Historical SHAs bad=${badSha.slice(0, 12)} fixed=${fixedSha.slice(0, 12)} (from bootstrap marker if present)`,
+  );
 }
 
 seed()

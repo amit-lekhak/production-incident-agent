@@ -166,7 +166,9 @@ Output a recommendation with confidence.`,
   };
 }
 
-/** Deterministic fallback when Gemini is unavailable — used by evals/oracle and no-key demos. */
+/** Deterministic fallback when Gemini is unavailable — used by evals/oracle and no-key demos.
+ * Infers cause from traces/metrics/source/diff — does not peek at active_faults.scenario.
+ */
 export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   hypotheses: HypothesesOutput;
   recommendation: RecommendationOutput;
@@ -181,11 +183,45 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   const code = await tools.code_query({
     question: "lookupProductNPlusOne N+1",
   });
-
-  const fault = health.fault?.scenario ?? null;
-  const activeSha = health.deploy?.sha ?? null;
+  const source = await tools.read_source({ path: "src/checkout.ts" });
+  const poolSrc = await tools.read_source({ path: "src/pool.ts" });
+  const diff = await tools.diff_deploys({});
+  const errors = await tools.list_errors({ limit: 5 });
   const db = await tools.query_db_timings({ minutes: 15 });
+  const metrics = health.metrics ?? [];
+
+  const activeSha = health.deploy?.sha ?? null;
   const catalogAvgMs = db.catalogAvgMs;
+  const catalogLookups = (traces.rows ?? []).map(
+    (r: { catalogLookups?: number }) => r.catalogLookups ?? 0,
+  );
+  const avgLookups =
+    catalogLookups.length === 0
+      ? 0
+      : catalogLookups.reduce((a: number, b: number) => a + b, 0) /
+        catalogLookups.length;
+  const payMs = (traces.rows ?? [])
+    .map((r: { paymentMs?: number | null }) => r.paymentMs ?? 0)
+    .filter((n: number) => n > 0);
+  const avgPay =
+    payMs.length === 0
+      ? 0
+      : payMs.reduce((a: number, b: number) => a + b, 0) / payMs.length;
+  const poolWait = (traces.rows ?? [])
+    .map((r: { poolWaitMs?: number | null }) => r.poolWaitMs ?? 0)
+    .filter((n: number) => n > 0);
+  const avgPool =
+    poolWait.length === 0
+      ? 0
+      : poolWait.reduce((a: number, b: number) => a + b, 0) / poolWait.length;
+  const errorRate =
+    metrics.find((m: { name: string }) => m.name === "checkout_error_rate")
+      ?.value ?? 0;
+  const paymentsP99 =
+    metrics.find((m: { name: string }) => m.name === "payments_latency_p99")
+      ?.value ?? 0;
+
+  const srcText = `${source.text}\n${poolSrc.text}\n${diff.diff}\n${code.display}`;
 
   let cause: HypothesesOutput["hypotheses"][0]["cause_type"] = "unknown";
   let action: RecommendationOutput["recommended_action"] = "page_human";
@@ -193,31 +229,43 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   let confidence = 55;
   let why = "Insufficient signal";
 
-  if (fault === "payment_timeout") {
+  if (
+    avgPay >= 1200 ||
+    paymentsP99 >= 1500 ||
+    srcText.includes("chargePaymentSlow")
+  ) {
     cause = "payment_timeout";
     action = "disable_flag";
     target = "payments_v2";
     confidence = 84;
     why =
-      "payments latency elevated; dependency isolation preferred over rollback";
-  } else if (fault === "error_spike") {
+      "payments latency elevated; dependency isolation preferred over revert_pr";
+  } else if (
+    errorRate >= 0.05 ||
+    (errors.rows?.length ?? 0) > 0 ||
+    /meta!\.source|req\.meta!\.source/.test(srcText)
+  ) {
     cause = "error_spike";
-    action = "rollback";
-    target = activeSha ?? "err321null";
+    action = "revert_pr";
+    target = activeSha ?? "unknown";
     confidence = 80;
-    why = "error events spiked after deploy";
-  } else if (fault === "pool_exhaustion") {
+    why = "error events / null meta access after deploy";
+  } else if (avgPool >= 400 || /DB_POOL_SIZE\s*=\s*2/.test(srcText)) {
     cause = "pool_exhaustion";
-    action = "rollback";
-    target = activeSha ?? "pool654cfg";
+    action = "revert_pr";
+    target = activeSha ?? "unknown";
     confidence = 82;
-    why = "db pool wait elevated after config deploy";
-  } else if (fault === "n_plus_one" || catalogAvgMs >= 200) {
+    why = "db pool wait elevated; pool size looks reduced in source";
+  } else if (
+    catalogAvgMs >= 200 ||
+    avgLookups >= 2.5 ||
+    srcText.includes("lookupProductNPlusOne")
+  ) {
     cause = "n_plus_one";
-    action = "rollback";
-    target = activeSha ?? "abc123nplus1";
+    action = "revert_pr";
+    target = activeSha ?? "unknown";
     confidence = 87;
-    why = `catalog.lookup avg=${catalogAvgMs}ms after deploy ${activeSha}; similar: ${similar.display}`;
+    why = `catalog.lookup avg=${catalogAvgMs}ms lookups/req≈${avgLookups.toFixed(1)} after deploy ${activeSha?.slice(0, 12)}; similar: ${similar.display}`;
   }
 
   const hypotheses: HypothesesOutput = {
@@ -229,7 +277,8 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
         supporting_tool_names: [
           "query_traces",
           "list_deployments",
-          "code_query",
+          "diff_deploys",
+          "read_source",
           "list_similar_incidents",
         ],
         why,
@@ -243,10 +292,11 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
     evidence: [
       { tool: "query_traces", display: traces.display, supports: true },
       { tool: "list_deployments", display: deploys.display, supports: true },
+      { tool: "diff_deploys", display: diff.display, supports: true },
       {
-        tool: "code_query",
-        display: code.display,
-        supports: cause === "n_plus_one",
+        tool: "read_source",
+        display: source.display.slice(0, 400),
+        supports: true,
       },
       {
         tool: "list_similar_incidents",
