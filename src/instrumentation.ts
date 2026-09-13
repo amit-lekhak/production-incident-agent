@@ -1,17 +1,29 @@
 import { storeLangfuseProcessor } from "@/lib/observability/langfuse";
+import { getEnv, hasLangfuse } from "@/lib/env";
 
 /**
  * Optional Langfuse + AI SDK telemetry. Local demo works with no keys —
  * we skip OTel export entirely when LANGFUSE_* is unset.
+ * Also starts ticker/watcher so the demo loop is live after boot.
  */
 export async function register() {
-  const pub = process.env.LANGFUSE_PUBLIC_KEY;
-  const secret = process.env.LANGFUSE_SECRET_KEY;
-  if (!pub || !secret) {
+  // Fail fast on missing DATABASE_URL etc.
+  getEnv();
+
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { ensureTicker } = await import("@/lib/sim/ticker");
+    const { ensureWatcher } = await import("@/lib/sim/watcher");
+    ensureTicker();
+    ensureWatcher();
+    console.info("[boot] ticker and watcher started");
+  }
+
+  if (!hasLangfuse()) {
     console.info("[otel] Langfuse keys missing — AI telemetry export disabled");
     return;
   }
 
+  const env = getEnv();
   const { NodeSDK } = await import("@opentelemetry/sdk-node");
   const { LangfuseSpanProcessor } = await import("@langfuse/otel");
   const { registerTelemetry } = await import("ai");
@@ -19,9 +31,9 @@ export async function register() {
     await import("@langfuse/vercel-ai-sdk");
 
   const langfuseSpanProcessor = new LangfuseSpanProcessor({
-    publicKey: pub,
-    secretKey: secret,
-    baseUrl: process.env.LANGFUSE_HOST ?? "https://cloud.langfuse.com",
+    publicKey: env.LANGFUSE_PUBLIC_KEY,
+    secretKey: env.LANGFUSE_SECRET_KEY,
+    baseUrl: env.LANGFUSE_HOST,
     exportMode: "immediate",
   });
 

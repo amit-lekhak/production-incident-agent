@@ -1,9 +1,9 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
+import { getEnv } from "../env";
 
-const url =
-  process.env.DATABASE_URL ?? "postgres://localhost:5432/relay_incident";
+const url = getEnv().DATABASE_URL;
 
 const globalForSql = globalThis as unknown as {
   sql?: ReturnType<typeof postgres>;

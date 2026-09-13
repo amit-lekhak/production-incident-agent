@@ -78,3 +78,7 @@ export function ensureTicker() {
   // fire once soon
   void tickOnce().catch(() => undefined);
 }
+
+export function tickerRunning(): boolean {
+  return Boolean(globalTick.__relayTicker?.timer);
+}
