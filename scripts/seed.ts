@@ -71,7 +71,8 @@ async function seed() {
     VALUES
       (${serviceId}, 'Checkout latency p95', 'checkout_latency_p95', '>', 2000, 60, true),
       (${serviceId}, 'Checkout error rate', 'checkout_error_rate', '>', 0.05, 60, true),
-      (${serviceId}, 'DB pool wait', 'db_pool_wait_ms', '>', 500, 60, true)
+      (${serviceId}, 'DB pool wait', 'db_pool_wait_ms', '>', 500, 60, true),
+      (${serviceId}, 'Payments latency p99', 'payments_latency_p99', '>', 1500, 60, true)
   `;
 
   await sql`

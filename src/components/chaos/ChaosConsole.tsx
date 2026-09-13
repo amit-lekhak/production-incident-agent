@@ -29,6 +29,13 @@ const SCENARIOS = [
   },
 ] as const;
 
+type WatchResult = {
+  opened?: boolean;
+  reason?: string;
+  incidentId?: string;
+  title?: string;
+};
+
 async function readResponseJson(res: Response): Promise<unknown> {
   const text = await res.text();
   if (!text.trim()) {
@@ -53,6 +60,67 @@ function errorFromJson(json: unknown): string | null {
   return null;
 }
 
+function summarizeWatch(
+  watch: unknown,
+  scenario: string,
+  tick: { metrics?: Record<string, number> } | null,
+): string[] {
+  if (!Array.isArray(watch)) {
+    return ["Watch: no results (tick/watch may have failed)."];
+  }
+  const lines: string[] = [];
+  const results = watch as WatchResult[];
+  const opened = results.filter((r) => r.opened);
+  const deduped = results.filter(
+    (r) => !r.opened && r.reason === "deduped" && r.incidentId,
+  );
+  const under = results.filter(
+    (r) =>
+      !r.opened &&
+      r.reason &&
+      r.reason !== "deduped" &&
+      !r.reason.startsWith("insufficient"),
+  );
+  const insufficient = results.filter(
+    (r) => !r.opened && r.reason?.startsWith("insufficient"),
+  );
+
+  for (const r of opened) {
+    lines.push(`Opened: ${r.title ?? "incident"} → /incidents/${r.incidentId}`);
+  }
+  for (const r of deduped) {
+    lines.push(
+      `Deduped onto existing incident → /incidents/${r.incidentId} (close it first to open a new one)`,
+    );
+  }
+  for (const r of insufficient) {
+    lines.push(`No incident yet: ${r.reason}`);
+  }
+  for (const r of under) {
+    lines.push(`Under threshold: ${r.reason}`);
+  }
+
+  if (
+    scenario === "payment_timeout" &&
+    opened.length === 0 &&
+    !results.some((r) => r.reason?.toLowerCase().includes("payment"))
+  ) {
+    const pay = tick?.metrics?.payments_latency_p99;
+    if (pay != null && pay < 1500) {
+      lines.push(
+        `Payments p99=${Math.round(pay)}ms is below the 1500ms alert — check payments_v2 flag / spans.`,
+      );
+    } else if (pay != null && pay >= 1500) {
+      lines.push(
+        "Payments p99 is elevated but no payments alert rule fired — run pnpm db:migrate (0005_payments_alert_rule).",
+      );
+    }
+  }
+
+  if (lines.length === 0) lines.push("Watch completed with no openings.");
+  return lines;
+}
+
 export function ChaosConsole() {
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<string>("Ready.");
@@ -68,18 +136,30 @@ export function ChaosConsole() {
       });
       const json = await readResponseJson(res);
       const apiError = errorFromJson(json);
-      if (!res.ok || apiError) {
+      const body = json as {
+        injected?: { deploySha?: string };
+        tick?: { metrics?: Record<string, number> };
+        watch?: unknown;
+        tickWatchError?: string;
+      };
+      if ((!res.ok || apiError) && !body.injected) {
         throw new Error(apiError ?? `Inject failed (${res.status})`);
       }
-      const injected = (json as { injected?: { deploySha?: string } }).injected;
       const sha =
-        typeof injected?.deploySha === "string"
-          ? injected.deploySha.slice(0, 7)
+        typeof body.injected?.deploySha === "string"
+          ? body.injected.deploySha.slice(0, 7)
           : null;
       const label = SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
+      const summary = summarizeWatch(body.watch, scenario, body.tick ?? null);
+      if (body.tickWatchError) {
+        summary.unshift(`Tick/watch error: ${body.tickWatchError}`);
+      }
       setLog(
         [
           sha ? `Injected ${label} · deploy ${sha}` : `Injected ${label}`,
+          ...summary,
+          "",
+          "Checkout is a probe — it does not open incidents. Watcher does.",
           "",
           JSON.stringify(json, null, 2),
         ].join("\n"),
@@ -145,9 +225,12 @@ export function ChaosConsole() {
       if (!res.ok || apiError) {
         throw new Error(apiError ?? `Watch failed (${res.status})`);
       }
+      const body = json as { watch?: unknown };
+      const summary = summarizeWatch(body.watch, "", null);
       setLog(
         [
           "Sampled metrics and evaluated alert rules",
+          ...summary,
           "",
           JSON.stringify(json, null, 2),
         ].join("\n"),
@@ -206,8 +289,9 @@ export function ChaosConsole() {
         </button>
       </div>
       <p className="text-xs text-(--muted)">
-        Background timers already sample every few seconds. Use these buttons to
-        force one checkout or one metrics+alert pass without waiting.
+        Checkout probes the fault. Incidents open from metric samples + alert
+        rules (Sample metrics & check alerts). Close stale incidents before
+        re-injecting or the watcher will dedupe.
       </p>
 
       <div className="grid gap-4 lg:grid-cols-2">

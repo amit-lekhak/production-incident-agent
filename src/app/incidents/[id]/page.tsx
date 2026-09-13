@@ -4,6 +4,7 @@ import { sql } from "@/lib/db";
 import { langfuseTraceUrl } from "@/lib/observability/incident-events";
 import { formatTokenCount } from "@/lib/observability/llm-usage";
 import { DiagnoseButton } from "@/components/incidents/DiagnoseButton";
+import { CloseIncidentButton } from "@/components/incidents/CloseIncidentButton";
 import {
   actionLabel,
   actionTargetLabel,
@@ -24,12 +25,20 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const TIMELINE_PAGE_SIZE = 25;
+
 export default async function IncidentDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ page?: string; noise?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
+  const page = Math.max(1, Number(sp.page ?? "1") || 1);
+  const showNoise = sp.noise === "1" || sp.noise === "true";
+
   const [incident] = await sql<
     {
       id: string;
@@ -53,6 +62,21 @@ export default async function IncidentDetailPage({
   `;
   if (!incident) notFound();
 
+  const [eventCount] = await sql<{ n: number; noise: number }[]>`
+    SELECT
+      count(*) FILTER (
+        WHERE ${showNoise ? sql`true` : sql`kind <> 'alert_repeat'`}
+      )::int AS n,
+      count(*) FILTER (WHERE kind = 'alert_repeat')::int AS noise
+    FROM incident_events
+    WHERE incident_id = ${id}::uuid
+  `;
+  const totalEvents = eventCount?.n ?? 0;
+  const noiseCount = eventCount?.noise ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalEvents / TIMELINE_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const offset = (safePage - 1) * TIMELINE_PAGE_SIZE;
+
   const events = await sql<
     {
       kind: string;
@@ -62,9 +86,31 @@ export default async function IncidentDetailPage({
     }[]
   >`
     SELECT kind, message, meta, created_at::text
-    FROM incident_events WHERE incident_id = ${id}::uuid
-    ORDER BY created_at ASC
+    FROM incident_events
+    WHERE incident_id = ${id}::uuid
+      AND ${showNoise ? sql`true` : sql`kind <> 'alert_repeat'`}
+    ORDER BY created_at DESC
+    LIMIT ${TIMELINE_PAGE_SIZE}
+    OFFSET ${offset}
   `;
+
+  const [lastRepeat] = !showNoise
+    ? await sql<{ created_at: string }[]>`
+        SELECT created_at::text
+        FROM incident_events
+        WHERE incident_id = ${id}::uuid AND kind = 'alert_repeat'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+    : [undefined];
+
+  function timelineHref(nextPage: number, noise = showNoise) {
+    const q = new URLSearchParams();
+    if (nextPage > 1) q.set("page", String(nextPage));
+    if (noise) q.set("noise", "1");
+    const qs = q.toString();
+    return qs ? `/incidents/${id}?${qs}` : `/incidents/${id}`;
+  }
 
   const hypotheses = await sql<
     {
@@ -179,7 +225,12 @@ export default async function IncidentDetailPage({
             ) : null}
           </div>
         </div>
-        <DiagnoseButton incidentId={id} status={incident.status} />
+        <div className="flex flex-col items-end gap-2">
+          <DiagnoseButton incidentId={id} status={incident.status} />
+          {incident.status === "awaiting_review" ? (
+            <CloseIncidentButton incidentId={id} />
+          ) : null}
+        </div>
       </header>
 
       {incident.needs_human_reason ? (
@@ -283,32 +334,88 @@ export default async function IncidentDetailPage({
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="panel p-4">
-          <h2 className="mb-2 text-sm font-semibold">Timeline</h2>
-          <ul className="space-y-2 text-sm">
-            {events.map((e, i) => (
-              <li
-                key={`${e.created_at}-${i}`}
-                className="border-l border-(--line) pl-3"
-              >
-                <div className="text-xs text-(--muted)" title={e.kind}>
-                  {eventKindLabel(e.kind)} ·{" "}
-                  <time
-                    dateTime={e.created_at}
-                    title={formatLocalTime(e.created_at)}
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Timeline</h2>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {!showNoise && noiseCount > 0 ? (
+                <Link
+                  href={timelineHref(1, true)}
+                  className="text-(--muted) underline"
+                >
+                  Show {noiseCount} alert repeat
+                  {noiseCount === 1 ? "" : "s"}
+                  {lastRepeat?.created_at
+                    ? ` (last ${formatRelativeTime(lastRepeat.created_at)})`
+                    : ""}
+                </Link>
+              ) : null}
+              {showNoise ? (
+                <Link
+                  href={timelineHref(1, false)}
+                  className="text-(--muted) underline"
+                >
+                  Hide alert repeats
+                </Link>
+              ) : null}
+            </div>
+          </div>
+          {events.length === 0 ? (
+            <p className="text-sm text-(--muted)">No timeline events yet.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {events.map((e, i) => (
+                <li
+                  key={`${e.created_at}-${i}`}
+                  className="border-l border-(--line) pl-3"
+                >
+                  <div className="text-xs text-(--muted)" title={e.kind}>
+                    {eventKindLabel(e.kind)} ·{" "}
+                    <time
+                      dateTime={e.created_at}
+                      title={formatLocalTime(e.created_at)}
+                    >
+                      {formatRelativeTime(e.created_at)}
+                    </time>
+                  </div>
+                  <div>
+                    {operatorEventMessage({
+                      kind: e.kind,
+                      message: e.message,
+                      meta: e.meta,
+                    })}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {totalPages > 1 ? (
+            <nav
+              className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs"
+              aria-label="Timeline pagination"
+            >
+              <span className="text-(--muted)">
+                Page {safePage} of {totalPages}
+              </span>
+              <div className="flex gap-2">
+                {safePage > 1 ? (
+                  <Link
+                    href={timelineHref(safePage - 1)}
+                    className="rounded border border-(--line) px-2 py-1"
                   >
-                    {formatRelativeTime(e.created_at)}
-                  </time>
-                </div>
-                <div>
-                  {operatorEventMessage({
-                    kind: e.kind,
-                    message: e.message,
-                    meta: e.meta,
-                  })}
-                </div>
-              </li>
-            ))}
-          </ul>
+                    Previous
+                  </Link>
+                ) : null}
+                {safePage < totalPages ? (
+                  <Link
+                    href={timelineHref(safePage + 1)}
+                    className="rounded border border-(--line) px-2 py-1"
+                  >
+                    Next
+                  </Link>
+                ) : null}
+              </div>
+            </nav>
+          ) : null}
         </div>
 
         <div className="panel p-4">

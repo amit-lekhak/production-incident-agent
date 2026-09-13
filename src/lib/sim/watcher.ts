@@ -131,12 +131,23 @@ export async function runWatcher(): Promise<WatchResult[]> {
     `;
 
     if (existing) {
-      await appendIncidentEvent({
-        incidentId: existing.id,
-        kind: "alert_repeat",
-        message: `Still elevated — ${metricLabel(rule.metric)} ${label} ${formatMetricValue(rule.metric, value)} over ${windowSeconds}s`,
-        meta: { metric: rule.metric, value, windowSeconds, label },
-      });
+      const [recentRepeat] = await sql<{ id: number }[]>`
+        SELECT id FROM incident_events
+        WHERE incident_id = ${existing.id}::uuid
+          AND kind = 'alert_repeat'
+          AND created_at >= NOW() - INTERVAL '30 seconds'
+          AND COALESCE(meta->>'metric', '') = ${rule.metric}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      if (!recentRepeat) {
+        await appendIncidentEvent({
+          incidentId: existing.id,
+          kind: "alert_repeat",
+          message: `Still elevated — ${metricLabel(rule.metric)} ${label} ${formatMetricValue(rule.metric, value)} over ${windowSeconds}s`,
+          meta: { metric: rule.metric, value, windowSeconds, label },
+        });
+      }
       results.push({
         opened: false,
         reason: "deduped",

@@ -92,6 +92,10 @@ export class LocalReleaseProvider implements ReleaseProvider {
     return this.deployments[0] ?? null;
   }
 
+  async defaultBranchSha(): Promise<string> {
+    return this.git("rev-parse", "HEAD");
+  }
+
   async listDeployments(limit = 10): Promise<DeployRecord[]> {
     return this.deployments.slice(0, limit);
   }

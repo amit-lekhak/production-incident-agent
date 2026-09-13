@@ -157,7 +157,16 @@ export async function closeRemediationPr(incidentId: string) {
     WHERE incident_id = ${incidentId}::uuid
     ORDER BY created_at DESC LIMIT 1
   `;
-  if (rec?.pr_number) {
+  if (!rec?.pr_number) return;
+  try {
     await getReleaseProvider().closePr(rec.pr_number);
+  } catch (err: unknown) {
+    const status =
+      err && typeof err === "object" && "status" in err
+        ? Number((err as { status: number }).status)
+        : null;
+    // Already closed / missing — still fine; incident close is what matters.
+    if (status === 404 || status === 422) return;
+    throw err;
   }
 }

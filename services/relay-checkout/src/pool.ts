@@ -1,2 +1,2 @@
-/** BUG: pool shrunk for cost — causes checkout wait spikes. */
-export const DB_POOL_SIZE = 2;
+/** Connection pool size for Relay Checkout (healthy default). */
+export const DB_POOL_SIZE = 10;

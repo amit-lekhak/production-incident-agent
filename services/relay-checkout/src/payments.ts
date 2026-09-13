@@ -1,9 +1,18 @@
+import { pushSpan } from "./spans";
+
 export async function chargePayment(input: {
   amountCents: number;
   method: string;
 }) {
+  const started = Date.now();
   await sleep(40);
   if (!input.method) throw new Error("payment method required");
+  pushSpan({
+    name: "payments.charge",
+    durationMs: Date.now() - started,
+    status: "ok",
+    attrs: { slow: false },
+  });
   return {
     id: `pay_${Date.now()}`,
     status: "captured" as const,
@@ -19,7 +28,6 @@ export async function chargePaymentV2(input: {
   amountCents: number;
   method: string;
 }) {
-  await sleep(40);
   return chargePayment(input);
 }
 
@@ -28,8 +36,20 @@ export async function chargePaymentSlow(input: {
   amountCents: number;
   method: string;
 }) {
+  const started = Date.now();
   await sleep(1800);
-  return chargePayment(input);
+  if (!input.method) throw new Error("payment method required");
+  pushSpan({
+    name: "payments.charge",
+    durationMs: Date.now() - started,
+    status: "ok",
+    attrs: { slow: true },
+  });
+  return {
+    id: `pay_${Date.now()}`,
+    status: "captured" as const,
+    amountCents: input.amountCents,
+  };
 }
 
 function sleep(ms: number) {

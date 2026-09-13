@@ -9,7 +9,9 @@ function plainResult(
   json: { status?: string; postmortemId?: string; ok?: boolean },
 ): string {
   if (decision === "rejected") {
-    return hasPr ? "PR closed." : "Recommendation rejected.";
+    return hasPr
+      ? "PR closed and incident rejected."
+      : "Recommendation rejected — incident closed.";
   }
   if (decision === "more_evidence") {
     return "Re-running diagnosis for more evidence.";

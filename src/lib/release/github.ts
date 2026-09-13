@@ -50,6 +50,19 @@ export class GitHubReleaseProvider implements ReleaseProvider {
     return list[0] ?? null;
   }
 
+  async defaultBranchSha(): Promise<string> {
+    const { data: repo } = await this.octokit.repos.get({
+      owner: this.owner,
+      repo: this.repo,
+    });
+    const { data: ref } = await this.octokit.git.getRef({
+      owner: this.owner,
+      repo: this.repo,
+      ref: `heads/${repo.default_branch}`,
+    });
+    return ref.object.sha;
+  }
+
   async listDeployments(limit = 10): Promise<DeployRecord[]> {
     const { data } = await this.octokit.repos.listDeployments({
       owner: this.owner,

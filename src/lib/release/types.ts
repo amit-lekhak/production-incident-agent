@@ -33,6 +33,8 @@ export type OpenRevertPrInput = {
 
 export type ReleaseProvider = {
   currentDeploy(): Promise<DeployRecord | null>;
+  /** Tip of the repo default branch (healthy source of truth — not the live deploy). */
+  defaultBranchSha(): Promise<string>;
   listDeployments(limit?: number): Promise<DeployRecord[]>;
   listCommits(limit?: number): Promise<CommitRecord[]>;
   getFile(sha: string, path: string): Promise<string>;

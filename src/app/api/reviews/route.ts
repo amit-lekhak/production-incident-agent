@@ -73,7 +73,26 @@ export async function POST(req: Request) {
     RETURNING id
   `;
 
+  // Reject must always close the incident even when the review row is gone
+  // (PR already closed on GitHub, double-click, race). Otherwise watcher
+  // keeps appending alert_repeat onto awaiting_review forever.
   if (!claimed) {
+    if (decision === "rejected") {
+      await closeRemediationPr(incidentId).catch(() => undefined);
+      await setIncidentStatus(incidentId, "closed_rejected");
+      await appendIncidentEvent({
+        incidentId,
+        kind: "review_rejected",
+        message: note
+          ? `Review rejected (no pending row): ${note}`
+          : "Review rejected — closed without a pending review row",
+      });
+      return Response.json({
+        ok: true,
+        status: "closed_rejected",
+        forced: true,
+      });
+    }
     return Response.json(
       {
         ok: false,
