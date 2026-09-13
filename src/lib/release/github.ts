@@ -275,6 +275,13 @@ export class GitHubReleaseProvider implements ReleaseProvider {
       pull_number: number,
       merge_method: "squash",
     });
+    await this.deletePrHeadBranch(number).catch((err) => {
+      console.warn(
+        "[github] delete head branch after merge failed",
+        number,
+        err,
+      );
+    });
     return { sha: data.sha, merged: data.merged };
   }
 
@@ -285,6 +292,54 @@ export class GitHubReleaseProvider implements ReleaseProvider {
       pull_number: number,
       state: "closed",
     });
+    await this.deletePrHeadBranch(number).catch((err) => {
+      console.warn(
+        "[github] delete head branch after close failed",
+        number,
+        err,
+      );
+    });
+  }
+
+  /** Drop incident/* head branches so closed/merged PRs stop cluttering the remote graph. */
+  private async deletePrHeadBranch(number: number): Promise<void> {
+    const { data: pr } = await this.octokit.pulls.get({
+      owner: this.owner,
+      repo: this.repo,
+      pull_number: number,
+    });
+    const head = pr.head.ref;
+    if (!head) return;
+
+    const { data: repo } = await this.octokit.repos.get({
+      owner: this.owner,
+      repo: this.repo,
+    });
+    if (head === repo.default_branch) return;
+
+    // Only auto-delete remediation branches we created (never user feature branches).
+    if (!head.startsWith("incident/")) return;
+
+    // Same-repo PRs only — ignore forks.
+    if (pr.head.repo && pr.head.repo.full_name !== pr.base.repo.full_name) {
+      return;
+    }
+
+    try {
+      await this.octokit.git.deleteRef({
+        owner: this.owner,
+        repo: this.repo,
+        ref: `heads/${head}`,
+      });
+    } catch (err: unknown) {
+      const status =
+        err && typeof err === "object" && "status" in err
+          ? Number((err as { status: number }).status)
+          : null;
+      // Already deleted or protected.
+      if (status === 404 || status === 422) return;
+      throw err;
+    }
   }
 
   async checkoutDeployed(sha: string): Promise<string> {
