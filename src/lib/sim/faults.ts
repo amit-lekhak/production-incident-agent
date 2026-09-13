@@ -1,4 +1,10 @@
 import { sql } from "@/lib/db";
+import { getReleaseProvider } from "@/lib/release";
+import {
+  activateDeployedSha,
+  syncRuntimeFromCurrentDeploy,
+} from "./deployed-runtime";
+import { loadScenarioPatch } from "./patches";
 import { SCENARIO_META, type ActiveFault, type FaultScenario } from "./types";
 
 function jsonb(value: unknown) {
@@ -38,9 +44,23 @@ export async function getActiveFault(
   };
 }
 
+/**
+ * Chaos: apply a real patch under services/relay-checkout, commit+push,
+ * create a GitHub production deployment, and activate that SHA locally.
+ */
 export async function injectFault(scenario: FaultScenario) {
   const serviceId = await getServiceId();
   const meta = SCENARIO_META[scenario];
+  const provider = getReleaseProvider();
+  const files = loadScenarioPatch(scenario);
+
+  const { sha } = await provider.commitAndPush({
+    message: meta.commitMessage,
+    files,
+  });
+
+  const deploy = await provider.createDeployment(sha, meta.summary);
+  await activateDeployedSha(deploy.sha);
 
   await sql`
     UPDATE active_faults
@@ -48,34 +68,11 @@ export async function injectFault(scenario: FaultScenario) {
     WHERE service_id = ${serviceId} AND active = true
   `;
 
-  // Drop recent samples so watcher window avg reflects the new fault quickly
+  // Drop recent samples so watcher window reflects the new release quickly
   await sql`
     DELETE FROM metric_samples
     WHERE service_id = ${serviceId}
       AND sampled_at >= NOW() - INTERVAL '5 minutes'
-  `;
-
-  await sql`
-    UPDATE deployments SET status = 'rolled_back', rolled_back_at = NOW()
-    WHERE service_id = ${serviceId} AND status = 'active'
-  `;
-
-  await sql`
-    INSERT INTO deployments (service_id, sha, version, status, summary, deployed_at)
-    VALUES (
-      ${serviceId},
-      ${meta.deploySha},
-      ${meta.version},
-      'active',
-      ${meta.summary},
-      NOW()
-    )
-    ON CONFLICT (sha) DO UPDATE
-      SET status = 'active',
-          deployed_at = NOW(),
-          rolled_back_at = NULL,
-          summary = EXCLUDED.summary,
-          version = EXCLUDED.version
   `;
 
   if (meta.flag) {
@@ -87,7 +84,7 @@ export async function injectFault(scenario: FaultScenario) {
 
   const [fault] = await sql<{ id: number }[]>`
     INSERT INTO active_faults (service_id, scenario, deploy_sha, config, active)
-    VALUES (${serviceId}, ${scenario}, ${meta.deploySha}, ${jsonb({})}, true)
+    VALUES (${serviceId}, ${scenario}, ${deploy.sha}, ${jsonb({ version: meta.version })}, true)
     RETURNING id
   `;
 
@@ -96,15 +93,23 @@ export async function injectFault(scenario: FaultScenario) {
     VALUES (
       ${serviceId},
       'warn',
-      ${`Chaos injected scenario=${scenario} deploy=${meta.deploySha}`},
-      ${jsonb({ scenario, deploySha: meta.deploySha })},
+      ${`Chaos injected scenario=${scenario} deploy=${deploy.sha.slice(0, 12)}`},
+      ${jsonb({ scenario, deploySha: deploy.sha })},
       NOW()
     )
   `;
 
-  return { serviceId, faultId: fault!.id, ...meta, scenario };
+  return {
+    serviceId,
+    faultId: fault!.id,
+    deploySha: deploy.sha,
+    version: meta.version,
+    summary: meta.summary,
+    scenario,
+  };
 }
 
+/** Clear chaos bookkeeping and re-sync runtime from current production deploy. */
 export async function clearFaults() {
   const serviceId = await getServiceId();
   await sql`
@@ -116,5 +121,6 @@ export async function clearFaults() {
     INSERT INTO log_lines (service_id, level, message, attrs, logged_at)
     VALUES (${serviceId}, 'info', 'Chaos faults cleared', ${jsonb({})}, NOW())
   `;
+  await syncRuntimeFromCurrentDeploy();
   return { serviceId };
 }

@@ -11,36 +11,36 @@ export const SCENARIO_META: Record<
   FaultScenario,
   {
     label: string;
-    deploySha: string;
     version: string;
     summary: string;
+    commitMessage: string;
     flag?: string;
   }
 > = {
   n_plus_one: {
     label: "N+1 catalog lookups",
-    deploySha: "abc123nplus1",
     version: "v1.5.0-bad",
     summary: "Per-item product enrichment introduces N+1 catalog queries",
+    commitMessage: "feat: per-item product enrichment (chaos n_plus_one)",
     flag: "catalog_enrichment",
   },
   payment_timeout: {
     label: "Payments dependency timeout",
-    deploySha: "pay789timeout",
     version: "v1.5.1-pay",
     summary: "Payments v2 path spikes p99; checkout waits on dependency",
+    commitMessage: "feat: route checkout through slow payments path (chaos)",
     flag: "payments_v2",
   },
   error_spike: {
     label: "Null deref error spike",
-    deploySha: "err321null",
     version: "v1.5.2-err",
     summary: "Empty cart metadata causes TypeError in checkout handler",
+    commitMessage: "fix: handle empty cart metadata (buggy chaos)",
   },
   pool_exhaustion: {
     label: "DB pool exhaustion",
-    deploySha: "pool654cfg",
     version: "v1.5.3-pool",
     summary: "Config shrinks DB pool to 2 connections",
+    commitMessage: "chore: shrink db pool to 2 for cost (chaos)",
   },
 };

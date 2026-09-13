@@ -97,11 +97,14 @@ export async function runWatcher(): Promise<WatchResult[]> {
       continue;
     }
 
-    const [deploy] = await sql<{ sha: string }[]>`
-      SELECT sha FROM deployments
-      WHERE service_id = ${serviceId} AND status = 'active'
-      ORDER BY deployed_at DESC LIMIT 1
-    `;
+    const { getReleaseProvider } = await import("@/lib/release");
+    let suspectSha: string | null = null;
+    try {
+      const deploy = await getReleaseProvider().currentDeploy();
+      suspectSha = deploy?.sha ?? null;
+    } catch {
+      suspectSha = null;
+    }
 
     const title = `${rule.name}: ${rule.metric} ${rule.operator} ${rule.threshold} (avg ${Math.round(value * 1000) / 1000} over ${windowSeconds}s)`;
 
@@ -130,7 +133,7 @@ export async function runWatcher(): Promise<WatchResult[]> {
           'high',
           ${rule.metric},
           ${value},
-          ${deploy?.sha ?? null},
+          ${suspectSha},
           NOW(),
           NOW()
         )

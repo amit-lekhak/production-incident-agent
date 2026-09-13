@@ -13,8 +13,19 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { ensureTicker } = await import("@/lib/sim/ticker");
     const { ensureWatcher } = await import("@/lib/sim/watcher");
+    const { syncRuntimeFromCurrentDeploy } =
+      await import("@/lib/sim/deployed-runtime");
     ensureTicker();
     ensureWatcher();
+    syncRuntimeFromCurrentDeploy()
+      .then((rt) => {
+        console.info(
+          `[boot] deployed runtime sha=${rt?.sha?.slice(0, 12) ?? "none"} scenario=${rt?.scenario ?? "healthy"}`,
+        );
+      })
+      .catch((err) => {
+        console.warn("[boot] deploy sync failed", err);
+      });
     console.info("[boot] ticker and watcher started");
   }
 
