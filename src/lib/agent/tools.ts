@@ -1,5 +1,7 @@
 import { sql } from "@/lib/db";
 import { codeExplain, codePath, codeQuery } from "@/lib/codegraph/query";
+import { getReleaseProvider } from "@/lib/release";
+import { getDeployedRuntime } from "@/lib/sim/deployed-runtime";
 
 export type ToolRuntime = { serviceId: number; incidentId: string };
 
@@ -78,12 +80,15 @@ export function buildTools(rt: ToolRuntime) {
         paymentMs:
           (r.spans ?? []).find((s) => s.name === "payments.charge")
             ?.durationMs ?? null,
+        poolWaitMs:
+          (r.spans ?? []).find((s) => s.name === "db.pool.wait")?.durationMs ??
+          null,
       }));
       return {
         display: catalogCounts
           .map(
             (c) =>
-              `${c.requestId}: ${c.durationMs}ms, catalog.lookup×${c.catalogLookups}, pay=${c.paymentMs ?? "—"}ms`,
+              `${c.requestId}: ${c.durationMs}ms, catalog.lookup×${c.catalogLookups}, pay=${c.paymentMs ?? "—"}ms, pool=${c.poolWaitMs ?? "—"}ms`,
           )
           .join("; "),
         rows: catalogCounts,
@@ -92,49 +97,77 @@ export function buildTools(rt: ToolRuntime) {
 
     async list_deployments(input: { limit?: number } = {}) {
       const limit = Math.min(input.limit ?? 10, 20);
-      const rows = await sql<
-        {
-          sha: string;
-          version: string;
-          status: string;
-          summary: string;
-          deployed_at: string;
-        }[]
-      >`
-        SELECT sha, version, status, summary, deployed_at::text
-        FROM deployments
-        WHERE service_id = ${rt.serviceId}
-        ORDER BY deployed_at DESC
-        LIMIT ${limit}
-      `;
+      const provider = getReleaseProvider();
+      const rows = await provider.listDeployments(limit);
       return {
         display: rows
-          .map((r) => `${r.sha} (${r.status}) ${r.summary}`)
+          .map(
+            (r, i) =>
+              `${r.sha.slice(0, 12)} (${i === 0 ? "active" : "previous"}) ${r.description}`,
+          )
           .join("; "),
-        rows,
+        rows: rows.map((r, i) => ({
+          sha: r.sha,
+          version: r.description,
+          status: i === 0 ? "active" : "previous",
+          summary: r.description,
+          deployed_at: r.createdAt,
+        })),
       };
     },
 
     async list_commits(input: { limit?: number } = {}) {
       const limit = Math.min(input.limit ?? 10, 20);
-      const rows = await sql<
-        {
-          sha: string;
-          message: string;
-          author: string;
-          files_changed: string[];
-          committed_at: string;
-        }[]
-      >`
-        SELECT sha, message, author, files_changed, committed_at::text
-        FROM commits
-        WHERE service_id = ${rt.serviceId}
-        ORDER BY committed_at DESC
-        LIMIT ${limit}
-      `;
+      const provider = getReleaseProvider();
+      const rows = await provider.listCommits(limit);
       return {
         display: rows.map((r) => `${r.sha}: ${r.message}`).join("; "),
-        rows,
+        rows: rows.map((r) => ({
+          sha: r.sha,
+          message: r.message,
+          author: r.author,
+          files_changed: r.filesChanged,
+          committed_at: r.committedAt,
+        })),
+      };
+    },
+
+    async read_source(input: { path: string; sha?: string }) {
+      const provider = getReleaseProvider();
+      const deploy = await provider.currentDeploy();
+      const sha = input.sha ?? deploy?.sha;
+      if (!sha) {
+        return { display: "no production deploy SHA", text: "", sha: null };
+      }
+      try {
+        const text = await provider.getFile(sha, input.path);
+        const display = `${input.path}@${sha.slice(0, 12)} (${text.length} chars)\n${text.slice(0, 1200)}`;
+        return { display, text, sha };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { display: `read_source failed: ${message}`, text: "", sha };
+      }
+    },
+
+    async diff_deploys(input: { base?: string; head?: string } = {}) {
+      const provider = getReleaseProvider();
+      const deploys = await provider.listDeployments(5);
+      const head = input.head ?? deploys[0]?.sha;
+      const base = input.base ?? deploys[1]?.sha;
+      if (!head || !base) {
+        return {
+          display: "need at least two production deploys to diff",
+          diff: "",
+          base: base ?? null,
+          head: head ?? null,
+        };
+      }
+      const diff = await provider.diff(base, head);
+      return {
+        display: `diff ${base.slice(0, 12)}...${head.slice(0, 12)}\n${diff.slice(0, 2000)}`,
+        diff,
+        base,
+        head,
       };
     },
 
@@ -235,17 +268,15 @@ export function buildTools(rt: ToolRuntime) {
     },
 
     async get_service_health() {
-      const [deploy] = await sql<{ sha: string; version: string }[]>`
-        SELECT sha, version FROM deployments
-        WHERE service_id = ${rt.serviceId} AND status = 'active'
-        ORDER BY deployed_at DESC LIMIT 1
-      `;
+      const provider = getReleaseProvider();
+      const deploy = await provider.currentDeploy();
       const metrics = await sql<{ name: string; value: number }[]>`
         SELECT DISTINCT ON (name) name, value
         FROM metric_samples
         WHERE service_id = ${rt.serviceId}
         ORDER BY name, sampled_at DESC
       `;
+      const rtLocal = getDeployedRuntime();
       const [fault] = await sql<
         { scenario: string; deploy_sha: string | null }[]
       >`
@@ -254,11 +285,17 @@ export function buildTools(rt: ToolRuntime) {
         ORDER BY injected_at DESC LIMIT 1
       `;
       return {
-        display: `active=${deploy?.sha ?? "none"}; fault=${fault?.scenario ?? "none"}; metrics=${metrics
+        display: `active=${deploy?.sha?.slice(0, 12) ?? "none"}; scenario=${rtLocal?.scenario ?? fault?.scenario ?? "none"}; metrics=${metrics
           .map((m) => displayMetric(m.name, m.value))
           .join(", ")}`,
-        deploy,
-        fault,
+        deploy: deploy
+          ? { sha: deploy.sha, version: deploy.description }
+          : null,
+        fault: fault
+          ? { scenario: fault.scenario, deploy_sha: fault.deploy_sha }
+          : rtLocal?.scenario
+            ? { scenario: rtLocal.scenario, deploy_sha: rtLocal.sha }
+            : null,
         metrics,
       };
     },
