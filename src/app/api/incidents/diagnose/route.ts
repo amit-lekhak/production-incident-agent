@@ -1,4 +1,7 @@
-import { runDiagnosisPipeline } from "@/lib/agent/pipeline";
+import {
+  DiagnosisConflictError,
+  runDiagnosisPipeline,
+} from "@/lib/agent/pipeline";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +23,23 @@ export async function POST(req: Request) {
     });
     return Response.json(result);
   } catch (err) {
+    if (err instanceof DiagnosisConflictError) {
+      return Response.json(
+        {
+          ok: false,
+          error: { code: "conflict", message: err.message },
+        },
+        { status: 409 },
+      );
+    }
     return Response.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      {
+        ok: false,
+        error: {
+          code: "internal",
+          message: err instanceof Error ? err.message : String(err),
+        },
+      },
       { status: 500 },
     );
   }

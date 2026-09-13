@@ -16,6 +16,12 @@ import {
 } from "./specialists";
 import type { HypothesesOutput, RecommendationOutput } from "./schemas";
 
+const DIAGNOSIS_ALLOWED = new Set([
+  "detected",
+  "needs_human",
+  "awaiting_review",
+]);
+
 function jsonb(value: unknown) {
   return sql`${JSON.stringify(value)}::jsonb`;
 }
@@ -24,24 +30,41 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
-  try {
-    return await fn();
-  } catch (err) {
-    const classified = classifyProviderError(err);
-    if (isHardFailCode(classified.code)) throw err;
-    if (!isRetryableDiagnosisCode(classified.code)) throw err;
-    const wait = classified.retryAfterMs ?? 2000;
-    await appendIncidentEvent({
-      incidentId:
-        (globalThis as unknown as { __currentIncidentId?: string })
-          .__currentIncidentId ?? "00000000-0000-0000-0000-000000000000",
-      kind: "retry",
-      message: `${label} retry after ${classified.code}`,
-      meta: { wait },
-    }).catch(() => undefined);
-    await sleep(wait);
-    return await fn();
+export class DiagnosisConflictError extends Error {
+  constructor(
+    public readonly incidentId: string,
+    public readonly status: string,
+  ) {
+    super(`Incident ${incidentId} cannot be diagnosed from status "${status}"`);
+    this.name = "DiagnosisConflictError";
+  }
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  incidentId: string,
+): Promise<T> {
+  const maxRetries = Number(process.env.DIAGNOSIS_MAX_RETRIES ?? 2);
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (err) {
+      const classified = classifyProviderError(err);
+      if (isHardFailCode(classified.code)) throw err;
+      if (!isRetryableDiagnosisCode(classified.code)) throw err;
+      if (attempt >= maxRetries) throw err;
+      attempt += 1;
+      const wait = classified.retryAfterMs ?? 2000;
+      await appendIncidentEvent({
+        incidentId,
+        kind: "retry",
+        message: `${label} retry ${attempt}/${maxRetries} after ${classified.code}`,
+        meta: { wait, attempt },
+      }).catch(() => undefined);
+      await sleep(wait);
+    }
   }
 }
 
@@ -49,26 +72,31 @@ export async function runDiagnosisPipeline(
   incidentId: string,
   opts?: { forceOracle?: boolean },
 ) {
-  const [incident] = await sql<
+  const [claimed] = await sql<
     { id: string; title: string; service_id: number; status: string }[]
   >`
-    SELECT id::text AS id, title, service_id, status
-    FROM incidents WHERE id = ${incidentId}::uuid
+    UPDATE incidents
+    SET status = 'investigating', updated_at = NOW()
+    WHERE id = ${incidentId}::uuid
+      AND status = ANY(${[...DIAGNOSIS_ALLOWED]})
+    RETURNING id::text AS id, title, service_id, status
   `;
-  if (!incident) throw new Error(`Incident ${incidentId} not found`);
 
-  (
-    globalThis as unknown as { __currentIncidentId?: string }
-  ).__currentIncidentId = incidentId;
+  if (!claimed) {
+    const [existing] = await sql<{ status: string }[]>`
+      SELECT status FROM incidents WHERE id = ${incidentId}::uuid
+    `;
+    if (!existing) throw new Error(`Incident ${incidentId} not found`);
+    throw new DiagnosisConflictError(incidentId, existing.status);
+  }
 
-  await setIncidentStatus(incidentId, "investigating");
   await appendIncidentEvent({
     incidentId,
     kind: "investigating",
     message: "Diagnosis pipeline started",
   });
 
-  const rt = { serviceId: incident.service_id, incidentId };
+  const rt = { serviceId: claimed.service_id, incidentId };
   const hasKey = Boolean(
     process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY,
   );
@@ -91,12 +119,14 @@ export async function runDiagnosisPipeline(
       recommendation = out.recommendation;
     } else {
       hypotheses = await withRetry(
-        () => runIncidentAgent(rt, incident.title),
+        () => runIncidentAgent(rt, claimed.title),
         "incident-agent",
+        incidentId,
       );
       recommendation = await withRetry(
         () => runEvidenceAgent(rt, hypotheses),
         "evidence-agent",
+        incidentId,
       );
     }
   } catch (err) {

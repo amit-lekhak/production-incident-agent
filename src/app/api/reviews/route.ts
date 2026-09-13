@@ -5,9 +5,12 @@ import {
   setIncidentStatus,
 } from "@/lib/observability/incident-events";
 import { executeApprovedAction } from "@/lib/agent/actions";
+import {
+  DiagnosisConflictError,
+  runDiagnosisPipeline,
+} from "@/lib/agent/pipeline";
 import { verifyRecovery } from "@/lib/agent/verifier";
 import { writePostmortem } from "@/lib/agent/postmortem";
-import { runDiagnosisPipeline } from "@/lib/agent/pipeline";
 import { captureAppException } from "@/lib/observability/sentry";
 
 export const dynamic = "force-dynamic";
@@ -27,29 +30,58 @@ export async function POST(req: Request) {
   }
   const { incidentId, decision, note, reviewer } = parsed.data;
 
-  const [review] = await sql<{ id: number }[]>`
-    SELECT id FROM reviews
-    WHERE incident_id = ${incidentId}::uuid AND decision = 'pending'
-    ORDER BY created_at DESC LIMIT 1
+  const [incident] = await sql<{ status: string }[]>`
+    SELECT status FROM incidents WHERE id = ${incidentId}::uuid
+  `;
+  if (!incident) {
+    return Response.json(
+      {
+        ok: false,
+        error: { code: "not_found", message: "Incident not found" },
+      },
+      { status: 404 },
+    );
+  }
+  if (incident.status !== "awaiting_review") {
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          code: "conflict",
+          message: `Incident is "${incident.status}", expected awaiting_review`,
+        },
+      },
+      { status: 409 },
+    );
+  }
+
+  const [claimed] = await sql<{ id: number }[]>`
+    UPDATE reviews
+    SET decision = ${decision},
+        note = ${note ?? null},
+        reviewer = ${reviewer ?? "oncall"},
+        decided_at = NOW()
+    WHERE id = (
+      SELECT id FROM reviews
+      WHERE incident_id = ${incidentId}::uuid AND decision = 'pending'
+      ORDER BY created_at DESC
+      LIMIT 1
+    )
+    AND decision = 'pending'
+    RETURNING id
   `;
 
-  if (review) {
-    await sql`
-      UPDATE reviews
-      SET decision = ${decision},
-          note = ${note ?? null},
-          reviewer = ${reviewer ?? "oncall"},
-          decided_at = NOW()
-      WHERE id = ${review.id}
-    `;
-  } else {
-    await sql`
-      INSERT INTO reviews (incident_id, decision, note, reviewer, decided_at)
-      VALUES (
-        ${incidentId}::uuid, ${decision}, ${note ?? null},
-        ${reviewer ?? "oncall"}, NOW()
-      )
-    `;
+  if (!claimed) {
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          code: "conflict",
+          message: "No pending review to claim (already decided?)",
+        },
+      },
+      { status: 409 },
+    );
   }
 
   await appendIncidentEvent({
@@ -95,6 +127,18 @@ export async function POST(req: Request) {
       postmortem,
     });
   } catch (err) {
+    if (err instanceof DiagnosisConflictError) {
+      return Response.json(
+        {
+          ok: false,
+          error: {
+            code: "conflict",
+            message: err.message,
+          },
+        },
+        { status: 409 },
+      );
+    }
     await captureAppException(err, { incidentId, decision });
     return Response.json(
       { error: err instanceof Error ? err.message : String(err) },
