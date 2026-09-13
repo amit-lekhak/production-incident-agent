@@ -12,6 +12,12 @@ const optionalNumber = (fallback: number) =>
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required"),
+  GITHUB_REPO: z
+    .string()
+    .min(1, "GITHUB_REPO is required")
+    .regex(/^[^/]+\/[^/]+$/, "GITHUB_REPO must be owner/repo"),
+  GITHUB_DEPLOY_ENV: z.string().optional().default("production"),
   GEMINI_API_KEY: z.string().optional().default(""),
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional().default(""),
   GEMINI_MODEL: z.string().optional().default("gemini-3.1-flash-lite"),
