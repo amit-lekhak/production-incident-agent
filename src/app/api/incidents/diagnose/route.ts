@@ -2,6 +2,8 @@ import {
   DiagnosisConflictError,
   runDiagnosisPipeline,
 } from "@/lib/agent/pipeline";
+import { apiError } from "@/lib/api-error";
+import { classifyProviderError } from "@/lib/agent/provider-errors";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +17,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json());
   if (!parsed.success) {
-    return Response.json({ error: parsed.error.flatten() }, { status: 400 });
+    return apiError("validation", "Invalid request body", 400);
   }
   try {
     const result = await runDiagnosisPipeline(parsed.data.incidentId, {
@@ -24,23 +26,14 @@ export async function POST(req: Request) {
     return Response.json(result);
   } catch (err) {
     if (err instanceof DiagnosisConflictError) {
-      return Response.json(
-        {
-          ok: false,
-          error: { code: "conflict", message: err.message },
-        },
-        { status: 409 },
-      );
+      return apiError("conflict", err.message, 409);
     }
-    return Response.json(
-      {
-        ok: false,
-        error: {
-          code: "internal",
-          message: err instanceof Error ? err.message : String(err),
-        },
-      },
-      { status: 500 },
+    const classified = classifyProviderError(err);
+    console.error("[diagnose]", parsed.data.incidentId, err);
+    return apiError(
+      classified.code,
+      classified.userMessage,
+      classified.code === "unknown" ? 500 : 502,
     );
   }
 }
