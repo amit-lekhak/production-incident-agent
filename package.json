@@ -11,7 +11,7 @@
     "format:check": "prettier --check .",
     "db:ensure": "tsx scripts/ensure-db.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx scripts/ensure-db.ts && drizzle-kit migrate",
+    "db:migrate": "tsx scripts/db-migrate.ts",
     "db:push": "tsx scripts/ensure-db.ts && drizzle-kit push",
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "tsx scripts/seed.ts",

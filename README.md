@@ -30,7 +30,7 @@ cp .env.example .env.local
 # set DATABASE_URL, GITHUB_TOKEN, GITHUB_REPO
 createdb relay_incident   # if needed
 pnpm install
-pnpm db:migrate   # or pnpm db:push on an existing DB
+pnpm db:migrate   # stamps baseline if you previously used db:push
 pnpm db:seed
 pnpm service:bootstrap   # seed-like git history + production deploy (once)
 pnpm dev
