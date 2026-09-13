@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { clearFaults, getServiceId, injectFault } from "../src/lib/sim/faults";
 import { tickOnce } from "../src/lib/sim/ticker";
 import { sql } from "../src/lib/db";
+import { getReleaseProvider } from "../src/lib/release";
 import { ensureGeminiKey } from "../src/lib/agent/provider-config";
 import {
   classifyProviderError,
@@ -36,6 +37,7 @@ async function seedScenarioMetrics(c: EvalCase, serviceId: number) {
     `;
   }
   if (c.scenario === "error_spike") {
+    const deploy = await getReleaseProvider().currentDeploy();
     await sql`
       INSERT INTO error_events (
         service_id, fingerprint, title, message, count, last_seen_at, deploy_sha
@@ -47,7 +49,7 @@ async function seedScenarioMetrics(c: EvalCase, serviceId: number) {
         'Cannot read properties of undefined',
         42,
         NOW(),
-        'err321null'
+        ${deploy?.sha ?? null}
       )
     `;
   }
@@ -74,11 +76,7 @@ export async function runAgentCase(c: EvalCase): Promise<AgentCaseResult> {
   const serviceId = await getServiceId();
   await seedScenarioMetrics(c, serviceId);
 
-  const [active] = await sql<{ sha: string }[]>`
-    SELECT sha FROM deployments
-    WHERE service_id = ${serviceId} AND status = 'active'
-    ORDER BY deployed_at DESC LIMIT 1
-  `;
+  const active = await getReleaseProvider().currentDeploy();
 
   const rt = {
     serviceId,

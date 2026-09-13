@@ -9,10 +9,10 @@ pnpm test          # unit tests including control-plane checks
 
 ## Oracle cases (deterministic)
 
-- `n_plus_one_rollback` — cause `n_plus_one`, action `rollback`
-- `payment_timeout_disable_flag` — cause `payment_timeout`, action `disable_flag` (not rollback)
-- `error_spike_rollback` — cause `error_spike`, action `rollback`
-- `pool_exhaustion_rollback` — cause `pool_exhaustion`, action `rollback`
+- `n_plus_one_revert_pr` — cause `n_plus_one`, action `revert_pr`
+- `payment_timeout_disable_flag` — cause `payment_timeout`, action `disable_flag` (not revert_pr)
+- `error_spike_revert_pr` — cause `error_spike`, action `revert_pr`
+- `pool_exhaustion_revert_pr` — cause `pool_exhaustion`, action `revert_pr`
 
 ## Gemini agent cases
 

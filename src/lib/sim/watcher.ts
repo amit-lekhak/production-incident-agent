@@ -155,7 +155,7 @@ export async function runWatcher(): Promise<WatchResult[]> {
         metric: rule.metric,
         value,
         windowSeconds,
-        deploy: deploy?.sha ?? null,
+        deploy: suspectSha,
       },
     });
 

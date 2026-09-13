@@ -88,7 +88,7 @@ flowchart LR
   end
 
   subgraph write [Mutating actions never LLM]
-    Rollback[rollback_deployment]
+    Revert[merge_revert_pr]
     Flag[set_feature_flag]
   end
 
@@ -125,4 +125,4 @@ flowchart TD
 
 ## 4. Code graph scope
 
-Agents query `fixtures/relay-checkout/graphify-out/graph.json` with a token budget. `.graphifyignore` excludes `node_modules`, lockfiles, and `graphify-out` rebuild noise. The Next.js dashboard itself is never indexed.
+Agents query `services/relay-checkout/graphify-out/graph.json` with a token budget and prefer live `read_source` / `diff_deploys` at the GitHub deploy SHA. `.graphifyignore` excludes `node_modules`, lockfiles, and `graphify-out` rebuild noise. The Next.js dashboard itself is never indexed.

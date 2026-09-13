@@ -18,8 +18,10 @@ Also: `needs_human`, `closed_rejected`. Diagnose CAS only from `detected` | `nee
 
 ## Tools (read-only)
 
-`query_metrics`, `query_logs`, `query_traces`, `list_deployments`, `list_commits`, `list_errors`, `query_db_timings`, `list_similar_incidents`, `get_service_health`, `code_query`, `code_path`, `code_explain`.
+`query_metrics`, `query_logs`, `query_traces`, `list_deployments`, `list_commits`, `read_source`, `diff_deploys`, `list_errors`, `query_db_timings`, `list_similar_incidents`, `get_service_health`, `code_query`, `code_path`, `code_explain`.
+
+Commits/deployments come from GitHub (`GITHUB_TOKEN` + `GITHUB_REPO` required). Metrics/incidents stay in Postgres.
 
 ## Env
 
-See `.env.example`. `DATABASE_URL` is required. Langfuse is optional. `GEMINI_API_KEY` enables live specialists; otherwise the oracle path runs. Watcher/ticker/verify knobs and `METRIC_RETENTION_HOURS` are validated via Zod in `src/lib/env.ts`.
+See `.env.example`. `DATABASE_URL`, `GITHUB_TOKEN`, and `GITHUB_REPO` are required. Langfuse is optional. `GEMINI_API_KEY` enables live specialists; otherwise the oracle path runs. Watcher/ticker/verify knobs and `METRIC_RETENTION_HOURS` are validated via Zod in `src/lib/env.ts`.

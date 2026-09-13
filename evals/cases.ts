@@ -13,15 +13,15 @@ export type EvalCase = {
 
 export const EVAL_CASES: EvalCase[] = [
   {
-    id: "n_plus_one_rollback",
+    id: "n_plus_one_revert_pr",
     scenario: "n_plus_one",
     expectCause: "n_plus_one",
-    expectAction: "rollback",
+    expectAction: "revert_pr",
     expectTarget: "active_sha",
     requiredToolGroups: [
       ["query_metrics", "get_service_health", "query_db_timings"],
       ["query_traces"],
-      ["list_deployments", "get_service_health"],
+      ["list_deployments", "get_service_health", "diff_deploys", "read_source"],
     ],
   },
   {
@@ -29,34 +29,34 @@ export const EVAL_CASES: EvalCase[] = [
     scenario: "payment_timeout",
     expectCause: "payment_timeout",
     expectAction: "disable_flag",
-    expectNotAction: "rollback",
+    expectNotAction: "revert_pr",
     expectTarget: "payments_v2",
     requiredToolGroups: [
       ["query_metrics", "get_service_health"],
-      ["query_traces", "list_errors"],
+      ["query_traces", "list_errors", "read_source"],
     ],
   },
   {
-    id: "error_spike_rollback",
+    id: "error_spike_revert_pr",
     scenario: "error_spike",
     expectCause: "error_spike",
-    expectAction: "rollback",
+    expectAction: "revert_pr",
     expectTarget: "active_sha",
     requiredToolGroups: [
       ["query_metrics", "get_service_health", "list_errors"],
-      ["query_traces", "list_errors"],
+      ["query_traces", "list_errors", "read_source"],
       ["list_deployments", "get_service_health"],
     ],
   },
   {
-    id: "pool_exhaustion_rollback",
+    id: "pool_exhaustion_revert_pr",
     scenario: "pool_exhaustion",
     expectCause: "pool_exhaustion",
-    expectAction: "rollback",
+    expectAction: "revert_pr",
     expectTarget: "active_sha",
     requiredToolGroups: [
       ["query_metrics", "get_service_health", "query_db_timings"],
-      ["query_traces", "query_db_timings"],
+      ["query_traces", "query_db_timings", "read_source"],
       ["list_deployments", "get_service_health"],
     ],
   },

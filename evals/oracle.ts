@@ -3,8 +3,11 @@ import { injectFault, clearFaults, getServiceId } from "../src/lib/sim/faults";
 import { tickOnce } from "../src/lib/sim/ticker";
 import { buildTools } from "../src/lib/agent/tools";
 import { oracleDiagnose } from "../src/lib/agent/specialists";
+import { getReleaseProvider } from "../src/lib/release";
 import { sql } from "../src/lib/db";
 import { EVAL_CASES, type EvalCase } from "./cases";
+import { installLocalRelease, uninstallLocalRelease } from "./local-release";
+import type { LocalReleaseProvider } from "../src/lib/release";
 
 function jsonb(value: unknown) {
   return sql`${JSON.stringify(value)}::jsonb`;
@@ -13,13 +16,34 @@ function jsonb(value: unknown) {
 export type OracleCase = EvalCase;
 export const ORACLE_CASES = EVAL_CASES;
 
+let provider: LocalReleaseProvider | null = null;
+
+export async function setupOracleEnv() {
+  provider = await installLocalRelease();
+}
+
+export function teardownOracleEnv() {
+  uninstallLocalRelease(provider ?? undefined);
+  provider = null;
+}
+
 export async function runOracleCase(c: EvalCase) {
+  if (!provider) await setupOracleEnv();
   await clearFaults();
+  const serviceId = await getServiceId();
+  // Clear scenario leftovers so metrics/errors from prior cases do not bleed.
+  await sql`
+    DELETE FROM error_events WHERE service_id = ${serviceId}
+  `;
+  await sql`
+    DELETE FROM metric_samples
+    WHERE service_id = ${serviceId}
+      AND name IN ('payments_latency_p99', 'checkout_error_rate', 'db_pool_wait_ms')
+  `;
   await injectFault(c.scenario);
   await tickOnce();
 
   if (c.scenario === "payment_timeout") {
-    const serviceId = await getServiceId();
     await sql`
       INSERT INTO metric_samples (service_id, name, value, labels, sampled_at)
       VALUES (
@@ -31,8 +55,19 @@ export async function runOracleCase(c: EvalCase) {
       )
     `;
   }
+  if (c.scenario === "error_spike") {
+    await sql`
+      INSERT INTO metric_samples (service_id, name, value, labels, sampled_at)
+      VALUES (
+        ${serviceId},
+        'checkout_error_rate',
+        0.4,
+        ${jsonb({ service: "relay-checkout" })},
+        NOW()
+      )
+    `;
+  }
 
-  const serviceId = await getServiceId();
   const rt = {
     serviceId,
     incidentId: "00000000-0000-0000-0000-000000000001",
@@ -50,11 +85,7 @@ export async function runOracleCase(c: EvalCase) {
   const cause = out.hypotheses.hypotheses[0]?.cause_type;
   const action = out.recommendation.recommended_action;
   const target = out.recommendation.action_target;
-  const [active] = await sql<{ sha: string }[]>`
-    SELECT sha FROM deployments
-    WHERE service_id = ${serviceId} AND status = 'active'
-    ORDER BY deployed_at DESC LIMIT 1
-  `;
+  const active = await getReleaseProvider().currentDeploy();
 
   const targetOk =
     c.expectTarget === "active_sha"

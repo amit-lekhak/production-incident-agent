@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
-import { describe, it, after } from "node:test";
-import { ORACLE_CASES, runOracleCase } from "./oracle";
+import { describe, it, after, before } from "node:test";
+import {
+  ORACLE_CASES,
+  runOracleCase,
+  setupOracleEnv,
+  teardownOracleEnv,
+} from "./oracle";
 import { sql } from "../src/lib/db";
 
 describe("oracle evals", () => {
+  before(async () => {
+    await setupOracleEnv();
+  });
   after(async () => {
+    teardownOracleEnv();
     await sql.end({ timeout: 1 });
   });
 

@@ -180,9 +180,6 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   const similar = await tools.list_similar_incidents({
     causeHint: "n_plus_one",
   });
-  const code = await tools.code_query({
-    question: "lookupProductNPlusOne N+1",
-  });
   const source = await tools.read_source({ path: "src/checkout.ts" });
   const poolSrc = await tools.read_source({ path: "src/pool.ts" });
   const diff = await tools.diff_deploys({});
@@ -221,7 +218,9 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
     metrics.find((m: { name: string }) => m.name === "payments_latency_p99")
       ?.value ?? 0;
 
-  const srcText = `${source.text}\n${poolSrc.text}\n${diff.diff}\n${code.display}`;
+  const checkoutSrc = source.text;
+  const poolText = poolSrc.text;
+  const srcText = `${checkoutSrc}\n${poolText}\n${diff.diff}`;
 
   let cause: HypothesesOutput["hypotheses"][0]["cause_type"] = "unknown";
   let action: RecommendationOutput["recommended_action"] = "page_human";
@@ -229,38 +228,52 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   let confidence = 55;
   let why = "Insufficient signal";
 
-  if (
-    avgPay >= 1200 ||
-    paymentsP99 >= 1500 ||
-    srcText.includes("chargePaymentSlow")
-  ) {
+  // Prefer live source signals first so stale metrics cannot override the deploy.
+  if (checkoutSrc.includes("lookupProductNPlusOne")) {
+    cause = "n_plus_one";
+    action = "revert_pr";
+    target = activeSha ?? "unknown";
+    confidence = 87;
+    why = `catalog.lookup avg=${catalogAvgMs}ms lookups/req≈${avgLookups.toFixed(1)} after deploy ${activeSha?.slice(0, 12)}; similar: ${similar.display}`;
+  } else if (/meta!\.source|req\.meta!\.source/.test(checkoutSrc)) {
+    cause = "error_spike";
+    action = "revert_pr";
+    target = activeSha ?? "unknown";
+    confidence = 80;
+    why = "error events / null meta access after deploy";
+  } else if (/DB_POOL_SIZE\s*=\s*2/.test(poolText)) {
+    cause = "pool_exhaustion";
+    action = "revert_pr";
+    target = activeSha ?? "unknown";
+    confidence = 82;
+    why = "db pool wait elevated; pool size looks reduced in source";
+  } else if (checkoutSrc.includes("chargePaymentSlow")) {
     cause = "payment_timeout";
     action = "disable_flag";
     target = "payments_v2";
     confidence = 84;
     why =
       "payments latency elevated; dependency isolation preferred over revert_pr";
-  } else if (
-    errorRate >= 0.05 ||
-    (errors.rows?.length ?? 0) > 0 ||
-    /meta!\.source|req\.meta!\.source/.test(srcText)
-  ) {
+  } else if (avgPay >= 1200 || paymentsP99 >= 1500) {
+    cause = "payment_timeout";
+    action = "disable_flag";
+    target = "payments_v2";
+    confidence = 84;
+    why =
+      "payments latency elevated; dependency isolation preferred over revert_pr";
+  } else if (errorRate >= 0.05 || (errors.rows?.length ?? 0) > 0) {
     cause = "error_spike";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 80;
     why = "error events / null meta access after deploy";
-  } else if (avgPool >= 400 || /DB_POOL_SIZE\s*=\s*2/.test(srcText)) {
+  } else if (avgPool >= 400) {
     cause = "pool_exhaustion";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 82;
     why = "db pool wait elevated; pool size looks reduced in source";
-  } else if (
-    catalogAvgMs >= 200 ||
-    avgLookups >= 2.5 ||
-    srcText.includes("lookupProductNPlusOne")
-  ) {
+  } else if (catalogAvgMs >= 200 || avgLookups >= 2.5) {
     cause = "n_plus_one";
     action = "revert_pr";
     target = activeSha ?? "unknown";

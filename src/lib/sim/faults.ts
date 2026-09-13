@@ -4,7 +4,7 @@ import {
   activateDeployedSha,
   syncRuntimeFromCurrentDeploy,
 } from "./deployed-runtime";
-import { loadScenarioPatch } from "./patches";
+import { loadHealthyServiceFiles, loadScenarioPatch } from "./patches";
 import { SCENARIO_META, type ActiveFault, type FaultScenario } from "./types";
 
 function jsonb(value: unknown) {
@@ -52,7 +52,14 @@ export async function injectFault(scenario: FaultScenario) {
   const serviceId = await getServiceId();
   const meta = SCENARIO_META[scenario];
   const provider = getReleaseProvider();
-  const files = loadScenarioPatch(scenario);
+  // Reset to healthy service files first so scenarios do not stack.
+  const healthy = loadHealthyServiceFiles().filter(
+    (f) => f.path.endsWith(".ts") || f.path.endsWith("package.json"),
+  );
+  const patch = loadScenarioPatch(scenario);
+  const byPath = new Map(healthy.map((f) => [f.path, f]));
+  for (const f of patch) byPath.set(f.path, f);
+  const files = [...byPath.values()];
 
   const { sha } = await provider.commitAndPush({
     message: meta.commitMessage,

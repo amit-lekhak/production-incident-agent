@@ -10,7 +10,7 @@ export type {
   PrRecord,
 } from "./types";
 export { GitHubReleaseProvider } from "./github";
-export { LocalReleaseProvider } from "./local";
+export { LocalReleaseProvider, readTreeAsMap } from "./local";
 
 let cached: ReleaseProvider | null = null;
 let localOverride: ReleaseProvider | null = null;

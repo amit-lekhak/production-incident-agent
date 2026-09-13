@@ -1,19 +1,49 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import "../load-env";
 import { sql } from "../db";
 import { executeApprovedAction } from "./actions";
 import { getServiceId } from "../sim/faults";
+import { getReleaseProvider } from "../release";
+import { loadScenarioPatch } from "../sim/patches";
+import { activateDeployedSha } from "../sim/deployed-runtime";
+import {
+  installLocalRelease,
+  uninstallLocalRelease,
+} from "../../../evals/local-release";
+import type { LocalReleaseProvider } from "../release";
 
-async function setupRollbackIncident(actionTarget: string) {
+let provider: LocalReleaseProvider;
+
+async function setupRevertIncident() {
   const serviceId = await getServiceId();
+  const release = getReleaseProvider();
+  const healthy = await release.currentDeploy();
+  assert.ok(healthy);
+
+  // Ship a bad patch as "chaos"
+  const files = loadScenarioPatch("n_plus_one");
+  const { sha: badSha } = await release.commitAndPush({
+    message: "feat: chaos n_plus_one for test",
+    files,
+  });
+  await release.createDeployment(badSha, "test bad deploy");
+  await activateDeployedSha(badSha);
+
+  const pr = await release.openRevertPr({
+    sha: badSha,
+    restoreSha: healthy.sha,
+    title: "test revert",
+    body: "test",
+  });
+
   const [incident] = await sql<{ id: string }[]>`
     INSERT INTO incidents (
       service_id, title, status, severity, opened_at, updated_at
     )
     VALUES (
       ${serviceId},
-      ${`rollback-test-${Date.now()}`},
+      ${`revert-test-${Date.now()}`},
       'awaiting_review',
       'high',
       NOW(),
@@ -23,91 +53,77 @@ async function setupRollbackIncident(actionTarget: string) {
   `;
   await sql`
     INSERT INTO recommendations (
-      incident_id, confidence, evidence, recommended_action, action_target, summary
+      incident_id, confidence, evidence, recommended_action, action_target, summary,
+      pr_number, pr_url, pr_head_sha
     )
     VALUES (
       ${incident!.id}::uuid,
       80,
       '[]'::jsonb,
-      'rollback',
-      ${actionTarget},
-      'test rollback'
+      'revert_pr',
+      ${badSha},
+      'test revert_pr',
+      ${pr.number},
+      ${pr.url},
+      ${pr.headSha}
     )
   `;
-  return { incidentId: incident!.id, serviceId };
+  return { incidentId: incident!.id, badSha, healthySha: healthy.sha, pr };
 }
 
-describe("rollback restore", () => {
-  it("restores previous SHA, not the rolled-back deploy", async () => {
-    const serviceId = await getServiceId();
-    const [active] = await sql<{ sha: string }[]>`
-      SELECT sha FROM deployments
-      WHERE service_id = ${serviceId} AND status = 'active'
-      ORDER BY deployed_at DESC LIMIT 1
-    `;
-    assert.ok(active?.sha);
+describe("revert_pr merge", () => {
+  before(async () => {
+    provider = await installLocalRelease();
+  });
+  after(async () => {
+    uninstallLocalRelease(provider);
+  });
 
-    const [prev] = await sql<{ sha: string }[]>`
-      SELECT sha FROM deployments
-      WHERE service_id = ${serviceId} AND sha <> ${active.sha}
-      ORDER BY deployed_at DESC LIMIT 1
-    `;
-    assert.ok(prev?.sha, "seed must include a prior deploy");
-
-    const { incidentId } = await setupRollbackIncident(active.sha);
+  it("merges PR and redeploys restored SHA", async () => {
+    const { incidentId, pr } = await setupRevertIncident();
     const out = await executeApprovedAction(incidentId);
     assert.equal(out.ok, true);
     if (!out.ok) return;
 
-    assert.equal(out.result.previousSha, active.sha);
-    assert.equal(out.result.restoredSha, prev.sha);
-
-    const [nowActive] = await sql<{ sha: string; status: string }[]>`
-      SELECT sha, status FROM deployments
-      WHERE service_id = ${serviceId} AND status = 'active'
-      LIMIT 1
-    `;
-    assert.equal(nowActive?.sha, prev.sha);
-
-    const [rolled] = await sql<{ status: string }[]>`
-      SELECT status FROM deployments WHERE sha = ${active.sha}
-    `;
-    assert.equal(rolled?.status, "rolled_back");
-
-    // re-activate original for other tests
-    await sql`
-      UPDATE deployments SET status = 'rolled_back', rolled_back_at = NOW()
-      WHERE sha = ${prev.sha}
-    `;
-    await sql`
-      UPDATE deployments SET status = 'active', rolled_back_at = NULL, deployed_at = NOW()
-      WHERE sha = ${active.sha}
-    `;
+    assert.equal(out.result.prNumber, pr.number);
+    const current = await getReleaseProvider().currentDeploy();
+    assert.ok(current?.sha);
+    // After merge + deploy, production points at the merge commit (restored tree)
+    assert.ok(current.sha.length >= 7);
   });
 
-  it("fails to needs_human when action_target mismatches active SHA", async () => {
-    const { incidentId, serviceId } =
-      await setupRollbackIncident("deadbeef0000");
-    const [before] = await sql<{ sha: string }[]>`
-      SELECT sha FROM deployments
-      WHERE service_id = ${serviceId} AND status = 'active'
-      LIMIT 1
+  it("fails when recommendation has no PR", async () => {
+    const serviceId = await getServiceId();
+    const [incident] = await sql<{ id: string }[]>`
+      INSERT INTO incidents (
+        service_id, title, status, severity, opened_at, updated_at
+      )
+      VALUES (
+        ${serviceId},
+        ${`no-pr-${Date.now()}`},
+        'awaiting_review',
+        'high',
+        NOW(),
+        NOW()
+      )
+      RETURNING id::text AS id
     `;
-    const out = await executeApprovedAction(incidentId);
+    await sql`
+      INSERT INTO recommendations (
+        incident_id, confidence, evidence, recommended_action, action_target, summary
+      )
+      VALUES (
+        ${incident!.id}::uuid,
+        80,
+        '[]'::jsonb,
+        'revert_pr',
+        'deadbeef',
+        'missing pr'
+      )
+    `;
+    const out = await executeApprovedAction(incident!.id);
     assert.equal(out.ok, false);
     if (out.ok) return;
-    assert.match(out.error, /does not match active deploy/);
-
-    const [after] = await sql<{ sha: string }[]>`
-      SELECT sha FROM deployments
-      WHERE service_id = ${serviceId} AND status = 'active'
-      LIMIT 1
-    `;
-    assert.equal(after?.sha, before?.sha);
-
-    const [incident] = await sql<{ status: string }[]>`
-      SELECT status FROM incidents WHERE id = ${incidentId}::uuid
-    `;
-    assert.equal(incident?.status, "needs_human");
+    assert.match(out.error, /No open revert PR/);
   });
 });

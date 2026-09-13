@@ -17,6 +17,9 @@ async function main() {
   const flags = parseFlags(process.argv.slice(2));
   const results: unknown[] = [];
 
+  const { setupOracleEnv, teardownOracleEnv } = await import("./oracle");
+  await setupOracleEnv();
+
   console.log("=== oracle ===");
   for (const c of ORACLE_CASES) {
     const r = await runOracleCase(c);
@@ -32,6 +35,7 @@ async function main() {
       console.error(
         "GEMINI_API_KEY (or GOOGLE_GENERATIVE_AI_API_KEY) required for agent evals. Use --oracle-only to skip.",
       );
+      teardownOracleEnv();
       await sql.end({ timeout: 1 });
       process.exit(1);
     }
@@ -68,6 +72,7 @@ async function main() {
       "pass" in r &&
       !(r as { pass: boolean }).pass,
   );
+  teardownOracleEnv();
   await sql.end({ timeout: 1 });
   process.exit(failed.length ? 1 : 0);
 }
