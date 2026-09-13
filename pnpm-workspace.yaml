@@ -1,6 +1,5 @@
 allowBuilds:
-  '@sentry/cli': set this to true or false
   esbuild: true
-  protobufjs: set this to true or false
-  sharp: false
+  protobufjs: true
+  sharp: true
   unrs-resolver: false
