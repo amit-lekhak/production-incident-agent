@@ -86,9 +86,10 @@ export async function runIncidentAgent(
     tools,
     stopWhen: stepCountIs(8),
     maxOutputTokens: 400,
+    runtimeContext: { incidentId: rt.incidentId },
     telemetry: {
       functionId: "incident-agent-gather",
-      metadata: { incidentId: rt.incidentId },
+      includeRuntimeContext: { incidentId: true },
     },
     system: `You are the Incident Agent for Relay Checkout.
 Gather evidence with tools. Do NOT recommend or execute actions.
@@ -113,9 +114,10 @@ Use tools now to gather evidence. Prefer tool display strings over invention.`,
     model: google(geminiModel()),
     output: Output.object({ schema: hypothesesSchema }),
     maxOutputTokens: 800,
+    runtimeContext: { incidentId: rt.incidentId },
     telemetry: {
       functionId: "incident-agent-structure",
-      metadata: { incidentId: rt.incidentId },
+      includeRuntimeContext: { incidentId: true },
     },
     system: `You propose ranked hypotheses for Relay Checkout incidents.
 Use ONLY the provided tool evidence. Do not invent metrics.
@@ -162,9 +164,10 @@ export async function runEvidenceAgent(
     tools,
     stopWhen: stepCountIs(8),
     maxOutputTokens: 400,
+    runtimeContext: { incidentId: rt.incidentId },
     telemetry: {
       functionId: "evidence-agent-gather",
-      metadata: { incidentId: rt.incidentId },
+      includeRuntimeContext: { incidentId: true },
     },
     system: `You are the Evidence Agent. Try to DISPROVE hypotheses first.
 Re-check metrics/traces/deployments/flags/code as needed. Do not execute mutations.
@@ -189,9 +192,10 @@ Gather evidence with tools.`,
     model: google(geminiModel()),
     output: Output.object({ schema: recommendationSchema }),
     maxOutputTokens: 900,
+    runtimeContext: { incidentId: rt.incidentId },
     telemetry: {
       functionId: "evidence-agent-structure",
-      metadata: { incidentId: rt.incidentId },
+      includeRuntimeContext: { incidentId: true },
     },
     system: `Choose recommended_action from evidence — not from a fixed cause label map:
 - Symptom started after a deploy and live diff/source explains it → revert_pr with that live deploy sha as action_target

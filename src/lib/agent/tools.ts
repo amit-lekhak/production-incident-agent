@@ -355,18 +355,15 @@ export function buildTools(rt: ToolRuntime) {
     },
 
     async code_query(input: { question: string }) {
-      const res = codeQuery(input.question, 1500);
-      return { display: res.display, ...res };
+      return codeQuery(input.question, 1500);
     },
 
     async code_path(input: { from: string; to: string }) {
-      const res = codePath(input.from, input.to, 1500);
-      return { display: res.display, ...res };
+      return codePath(input.from, input.to, 1500);
     },
 
     async code_explain(input: { symbol: string }) {
-      const res = codeExplain(input.symbol, 1500);
-      return { display: res.display, ...res };
+      return codeExplain(input.symbol, 1500);
     },
   };
 }

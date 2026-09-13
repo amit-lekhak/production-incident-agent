@@ -78,9 +78,10 @@ export async function writePostmortem(
       model: google(geminiModel()),
       output: Output.object({ schema: postmortemSchema }),
       maxOutputTokens: 1200,
+      runtimeContext: { incidentId },
       telemetry: {
         functionId: "postmortem-agent",
-        metadata: { incidentId },
+        includeRuntimeContext: { incidentId: true },
       },
       system: `You write postmortems ONLY from the provided incident record. Do not invent new investigation.`,
       prompt: `Write a postmortem from this record:\n${JSON.stringify(record, null, 2)}`,
