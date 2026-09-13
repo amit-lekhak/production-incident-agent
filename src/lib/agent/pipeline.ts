@@ -3,7 +3,7 @@ import {
   appendIncidentEvent,
   setIncidentStatus,
 } from "@/lib/observability/incident-events";
-import { captureAppException } from "@/lib/observability/sentry";
+import { currentTraceId, flushTelemetry } from "@/lib/observability/langfuse";
 import {
   classifyProviderError,
   isHardFailCode,
@@ -66,6 +66,16 @@ async function withRetry<T>(
       await sleep(wait);
     }
   }
+}
+
+async function persistTraceId(incidentId: string) {
+  const traceId = await currentTraceId();
+  if (!traceId) return;
+  await sql`
+    UPDATE incidents
+    SET langfuse_trace_id = COALESCE(${traceId}, langfuse_trace_id)
+    WHERE id = ${incidentId}::uuid
+  `.catch(() => undefined);
 }
 
 export async function runDiagnosisPipeline(
@@ -131,7 +141,7 @@ export async function runDiagnosisPipeline(
     }
   } catch (err) {
     const classified = classifyProviderError(err);
-    await captureAppException(err, { incidentId, stage: "diagnosis" });
+    console.error("[diagnosis]", incidentId, classified.code, err);
     await setIncidentStatus(incidentId, "needs_human", {
       needsHumanReason: `${classified.code}: ${classified.userMessage}`,
     });
@@ -141,8 +151,13 @@ export async function runDiagnosisPipeline(
       message: classified.userMessage,
       meta: { code: classified.code, raw: classified.raw.slice(0, 500) },
     });
+    await persistTraceId(incidentId);
+    await flushTelemetry().catch(() => undefined);
     return { ok: false as const, status: "needs_human", classified };
   }
+
+  await persistTraceId(incidentId);
+  await flushTelemetry().catch(() => undefined);
 
   // wipe prior hypotheses for re-runs
   await sql`DELETE FROM recommendations WHERE incident_id = ${incidentId}::uuid`;

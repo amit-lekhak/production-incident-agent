@@ -61,7 +61,8 @@ export default async function OpsPage() {
           </span>
         </div>
         <div className="mt-1 text-[var(--muted)]">
-          Sentry DSN: {process.env.SENTRY_DSN ? "set" : "unset (noop)"}
+          Trace links appear when Langfuse is configured and a diagnosis run
+          recorded an OTel trace id.
         </div>
       </div>
 

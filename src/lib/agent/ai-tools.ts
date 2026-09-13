@@ -39,7 +39,7 @@ export function buildAiTools(rt: ToolRuntime) {
       execute: async (args) => t.list_commits(args),
     }),
     list_errors: tool({
-      description: "List simulated error events (Sentry stand-in).",
+      description: "List simulated error events (error inbox).",
       inputSchema: z.object({ limit: z.number().optional() }),
       execute: async (args) => t.list_errors(args),
     }),

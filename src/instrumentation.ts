@@ -1,3 +1,5 @@
+import { storeLangfuseProcessor } from "@/lib/observability/langfuse";
+
 /**
  * Optional Langfuse + AI SDK telemetry. Local demo works with no keys —
  * we skip OTel export entirely when LANGFUSE_* is unset.
@@ -28,21 +30,9 @@ export async function register() {
   });
   sdk.start();
   registerTelemetry(new LangfuseVercelAiSdkIntegration());
-
-  (
-    globalThis as unknown as {
-      __langfuseSpanProcessor?: typeof langfuseSpanProcessor;
-    }
-  ).__langfuseSpanProcessor = langfuseSpanProcessor;
+  storeLangfuseProcessor(langfuseSpanProcessor);
 
   console.info("[otel] Langfuse telemetry registered");
 }
 
-export async function flushTelemetry() {
-  const processor = (
-    globalThis as unknown as {
-      __langfuseSpanProcessor?: { forceFlush: () => Promise<void> };
-    }
-  ).__langfuseSpanProcessor;
-  if (processor) await processor.forceFlush();
-}
+export { flushTelemetry, currentTraceId } from "@/lib/observability/langfuse";

@@ -11,7 +11,7 @@ import {
 } from "@/lib/agent/pipeline";
 import { verifyRecovery } from "@/lib/agent/verifier";
 import { writePostmortem } from "@/lib/agent/postmortem";
-import { captureAppException } from "@/lib/observability/sentry";
+import { flushTelemetry } from "@/lib/observability/langfuse";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -139,10 +139,23 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    await captureAppException(err, { incidentId, decision });
+    console.error("[reviews]", incidentId, decision, err);
+    await appendIncidentEvent({
+      incidentId,
+      kind: "review_error",
+      message: err instanceof Error ? err.message : String(err),
+    }).catch(() => undefined);
     return Response.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      {
+        ok: false,
+        error: {
+          code: "internal",
+          message: err instanceof Error ? err.message : String(err),
+        },
+      },
       { status: 500 },
     );
+  } finally {
+    await flushTelemetry().catch(() => undefined);
   }
 }
