@@ -23,7 +23,7 @@ async function seedIncident(status: string) {
     )
     VALUES (
       ${serviceId},
-      ${`test-${status}-${Date.now()}`},
+      ${`ci-test-${status}-${Date.now()}`},
       ${status},
       'high',
       NOW(),
@@ -71,6 +71,28 @@ describe("diagnosis pipeline status guards", () => {
       ORDER BY created_at DESC LIMIT 1
     `;
     assert.equal(review?.decision, "pending");
+  });
+
+  it("re-diagnoses awaiting_review after wiping prior reviews", async () => {
+    const id = await seedIncident("detected");
+    const first = await runDiagnosisPipeline(id, { forceOracle: true });
+    assert.equal(first.ok, true, JSON.stringify(first));
+
+    const second = await runDiagnosisPipeline(id, { forceOracle: true });
+    assert.equal(second.ok, true, JSON.stringify(second));
+    assert.equal(second.status, "awaiting_review");
+
+    const [counts] = await sql<
+      { recs: number; hyps: number; reviews: number }[]
+    >`
+      SELECT
+        (SELECT COUNT(*)::int FROM recommendations WHERE incident_id = ${id}::uuid) AS recs,
+        (SELECT COUNT(*)::int FROM hypotheses WHERE incident_id = ${id}::uuid) AS hyps,
+        (SELECT COUNT(*)::int FROM reviews WHERE incident_id = ${id}::uuid) AS reviews
+    `;
+    assert.equal(counts?.recs, 1);
+    assert.ok((counts?.hyps ?? 0) >= 1);
+    assert.equal(counts?.reviews, 1);
   });
 });
 

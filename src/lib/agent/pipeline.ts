@@ -215,59 +215,76 @@ export async function runDiagnosisPipeline(
   // Close prior PRs before wiping recommendations
   await closeSupersededPrs(incidentId);
 
-  const recId = await sql.begin(async (tx) => {
-    await tx`DELETE FROM recommendations WHERE incident_id = ${incidentId}::uuid`;
-    await tx`DELETE FROM hypotheses WHERE incident_id = ${incidentId}::uuid`;
+  let recId: number;
+  try {
+    recId = await sql.begin(async (tx) => {
+      // reviews → recommendations → hypotheses (FK order)
+      await tx`DELETE FROM reviews WHERE incident_id = ${incidentId}::uuid`;
+      await tx`DELETE FROM recommendations WHERE incident_id = ${incidentId}::uuid`;
+      await tx`DELETE FROM hypotheses WHERE incident_id = ${incidentId}::uuid`;
 
-    const hypByRank = new Map<number, number>();
-    for (const h of hypotheses.hypotheses) {
-      const [row] = await tx<{ id: number }[]>`
-        INSERT INTO hypotheses (
-          incident_id, rank, cause_type, suspect_deploy, supporting_tool_names, why
+      const hypByRank = new Map<number, number>();
+      for (const h of hypotheses.hypotheses) {
+        const [row] = await tx<{ id: number }[]>`
+          INSERT INTO hypotheses (
+            incident_id, rank, cause_type, suspect_deploy, supporting_tool_names, why
+          )
+          VALUES (
+            ${incidentId}::uuid,
+            ${h.rank},
+            ${h.cause_type},
+            ${h.suspect_deploy},
+            ${jsonb(h.supporting_tool_names)},
+            ${h.why}
+          )
+          RETURNING id
+        `;
+        hypByRank.set(h.rank, row!.id);
+      }
+
+      const winning =
+        hypByRank.get(recommendation.winning_hypothesis_rank) ??
+        hypByRank.get(1) ??
+        [...hypByRank.values()][0] ??
+        null;
+
+      const [rec] = await tx<{ id: number }[]>`
+        INSERT INTO recommendations (
+          incident_id, winning_hypothesis_id, confidence, evidence,
+          recommended_action, action_target, summary
         )
         VALUES (
           ${incidentId}::uuid,
-          ${h.rank},
-          ${h.cause_type},
-          ${h.suspect_deploy},
-          ${jsonb(h.supporting_tool_names)},
-          ${h.why}
+          ${winning},
+          ${recommendation.confidence_0_100},
+          ${jsonb(recommendation.evidence)},
+          ${recommendation.recommended_action},
+          ${recommendation.action_target},
+          ${recommendation.summary}
         )
         RETURNING id
       `;
-      hypByRank.set(h.rank, row!.id);
-    }
 
-    const winning =
-      hypByRank.get(recommendation.winning_hypothesis_rank) ??
-      hypByRank.get(1) ??
-      [...hypByRank.values()][0] ??
-      null;
+      await tx`
+        INSERT INTO reviews (incident_id, recommendation_id, decision, reviewer)
+        VALUES (${incidentId}::uuid, ${rec!.id}, 'pending', 'oncall')
+      `;
 
-    const [rec] = await tx<{ id: number }[]>`
-      INSERT INTO recommendations (
-        incident_id, winning_hypothesis_id, confidence, evidence,
-        recommended_action, action_target, summary
-      )
-      VALUES (
-        ${incidentId}::uuid,
-        ${winning},
-        ${recommendation.confidence_0_100},
-        ${jsonb(recommendation.evidence)},
-        ${recommendation.recommended_action},
-        ${recommendation.action_target},
-        ${recommendation.summary}
-      )
-      RETURNING id
-    `;
-
-    await tx`
-      INSERT INTO reviews (incident_id, recommendation_id, decision, reviewer)
-      VALUES (${incidentId}::uuid, ${rec!.id}, 'pending', 'oncall')
-    `;
-
-    return rec!.id;
-  });
+      return rec!.id;
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[diagnosis] persist failed", incidentId, err);
+    await setIncidentStatus(incidentId, "needs_human", {
+      needsHumanReason: `persist_failed: ${message}`,
+    });
+    await appendIncidentEvent({
+      incidentId,
+      kind: "diagnosis_failed",
+      message,
+    });
+    return { ok: false as const, status: "needs_human", error: message };
+  }
 
   // Open revert PR for human merge — LLM never mutates. Only after confidence gate.
   if (recommendation.recommended_action === "revert_pr") {

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
+import { actionLabel } from "@/lib/ui/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +65,7 @@ export default async function IncidentsPage() {
                 <span className="badge bg-(--line)">{r.status}</span>
                 {r.recommended_action ? (
                   <span className="badge bg-[#0c4a6e] text-(--accent)">
-                    {r.recommended_action}
+                    {actionLabel(r.recommended_action)}
                     {r.confidence != null ? ` · ${r.confidence}%` : ""}
                   </span>
                 ) : null}

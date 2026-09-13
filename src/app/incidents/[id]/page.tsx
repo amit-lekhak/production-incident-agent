@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { sql } from "@/lib/db";
 import { langfuseTraceUrl } from "@/lib/observability/incident-events";
 import { DiagnoseButton } from "@/components/incidents/DiagnoseButton";
+import { actionLabel, causeLabel, shortSha } from "@/lib/ui/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -62,9 +63,12 @@ export default async function IncidentDetailPage({
       action_target: string;
       summary: string;
       evidence: Array<{ tool: string; display: string; supports: boolean }>;
+      pr_number: number | null;
+      pr_url: string | null;
     }[]
   >`
-    SELECT id, confidence, recommended_action, action_target, summary, evidence
+    SELECT id, confidence, recommended_action, action_target, summary, evidence,
+           pr_number, pr_url
     FROM recommendations WHERE incident_id = ${id}::uuid
     ORDER BY created_at DESC LIMIT 1
   `;
@@ -90,7 +94,7 @@ export default async function IncidentDetailPage({
             <span className="badge bg-(--line)">{incident.severity}</span>
             {incident.suspect_deploy_sha ? (
               <span className="badge bg-[#0c4a6e] font-mono text-(--accent)">
-                {incident.suspect_deploy_sha}
+                deploy {shortSha(incident.suspect_deploy_sha)}
               </span>
             ) : null}
           </div>
@@ -147,10 +151,10 @@ export default async function IncidentDetailPage({
                   className="rounded-lg border border-(--line) p-3"
                 >
                   <div className="font-medium">
-                    #{h.rank} {h.cause_type}
+                    #{h.rank} {causeLabel(h.cause_type)}
                     {h.suspect_deploy ? (
                       <span className="ml-2 font-mono text-xs text-(--accent)">
-                        {h.suspect_deploy}
+                        {shortSha(h.suspect_deploy)}
                       </span>
                     ) : null}
                   </div>
@@ -171,15 +175,36 @@ export default async function IncidentDetailPage({
           <p className="text-sm text-(--muted)">Pending evidence agent.</p>
         ) : (
           <div className="space-y-2 text-sm">
-            <div>
+            <div className="flex flex-wrap items-center gap-2">
               <span className="badge bg-[#0c4a6e] text-(--accent)">
-                {rec.recommended_action} → {rec.action_target}
+                {actionLabel(rec.recommended_action)}
+                {rec.recommended_action === "revert_pr" ||
+                rec.recommended_action === "rollback"
+                  ? ` → ${shortSha(rec.action_target)}`
+                  : rec.action_target
+                    ? ` → ${rec.action_target}`
+                    : ""}
               </span>
-              <span className="ml-2 badge bg-(--line)">
+              <span className="badge bg-(--line)">
                 {rec.confidence}% confidence
               </span>
             </div>
             <p>{rec.summary}</p>
+            {rec.pr_url ? (
+              <p>
+                <span className="text-(--muted)">
+                  Proposed remediation (awaiting merge):{" "}
+                </span>
+                <a
+                  href={rec.pr_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-(--accent) underline"
+                >
+                  GitHub PR #{rec.pr_number}
+                </a>
+              </p>
+            ) : null}
             <ul className="space-y-1 text-xs text-(--muted)">
               {(rec.evidence ?? []).map((e, i) => (
                 <li key={i}>
@@ -188,10 +213,7 @@ export default async function IncidentDetailPage({
               ))}
             </ul>
             {incident.status === "awaiting_review" ? (
-              <Link
-                href="/review"
-                className="inline-block text-(--accent)"
-              >
+              <Link href="/review" className="inline-block text-(--accent)">
                 Open review queue →
               </Link>
             ) : null}
@@ -204,10 +226,7 @@ export default async function IncidentDetailPage({
         <ul className="space-y-1 text-sm">
           {similar.map((s) => (
             <li key={s.id}>
-              <Link
-                href={`/incidents/${s.id}`}
-                className="text-(--accent)"
-              >
+              <Link href={`/incidents/${s.id}`} className="text-(--accent)">
                 {s.title}
               </Link>
             </li>

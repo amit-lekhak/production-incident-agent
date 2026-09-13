@@ -7,24 +7,25 @@ const SCENARIOS = [
     id: "n_plus_one",
     label: "N+1 catalog lookups",
     blurb:
-      "Deploy abc123nplus1 — per-item enrichment. Expect latency alert + rollback.",
+      "Commits a checkout patch that looks up catalog items one-by-one. Expect a latency alert and a revert recommendation.",
   },
   {
     id: "payment_timeout",
     label: "Payments timeout",
     blurb:
-      "Deploy pay789timeout — payments p99 spikes. Rollback is wrong; disable flag.",
+      "Turns on the slow payments_v2 path. Expect a payments alert — disable the flag, do not revert.",
   },
   {
     id: "error_spike",
     label: "Null deref errors",
     blurb:
-      "Deploy err321null — TypeError in checkout. Expect error-rate alert.",
+      "Checkout crashes when cart metadata is missing. Expect an error-rate alert and a revert.",
   },
   {
     id: "pool_exhaustion",
     label: "DB pool exhaustion",
-    blurb: "Deploy pool654cfg — pool size 2. Expect pool wait alert.",
+    blurb:
+      "Shrinks the DB pool to 2 connections. Expect a pool-wait alert and a revert.",
   },
 ] as const;
 
@@ -42,7 +43,18 @@ export function ChaosConsole() {
         body: JSON.stringify({ action: "inject", scenario }),
       });
       const json = await res.json();
-      setLog(JSON.stringify(json, null, 2));
+      const sha =
+        typeof json?.injected?.deploySha === "string"
+          ? json.injected.deploySha.slice(0, 7)
+          : null;
+      const label = SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
+      setLog(
+        [
+          sha ? `Injected ${label} · deploy ${sha}` : `Injected ${label}`,
+          "",
+          JSON.stringify(json, null, 2),
+        ].join("\n"),
+      );
     } catch (err) {
       setLog(String(err));
     } finally {
@@ -58,7 +70,10 @@ export function ChaosConsole() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "clear" }),
       });
-      setLog(JSON.stringify(await res.json(), null, 2));
+      const json = await res.json();
+      setLog(
+        ["Cleared chaos state", "", JSON.stringify(json, null, 2)].join("\n"),
+      );
     } finally {
       setBusy(null);
     }
@@ -88,7 +103,14 @@ export function ChaosConsole() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "watch" }),
       });
-      setLog(JSON.stringify(await res.json(), null, 2));
+      const json = await res.json();
+      setLog(
+        [
+          "Sampled metrics and evaluated alert rules",
+          "",
+          JSON.stringify(json, null, 2),
+        ].join("\n"),
+      );
     } finally {
       setBusy(null);
     }
@@ -121,7 +143,7 @@ export function ChaosConsole() {
           disabled={busy !== null}
           className="rounded-lg bg-(--accent) px-4 py-2 text-sm font-semibold text-[#0b1220] disabled:opacity-50"
         >
-          Hit /sim/checkout
+          Run one checkout
         </button>
         <button
           type="button"
@@ -129,7 +151,7 @@ export function ChaosConsole() {
           disabled={busy !== null}
           className="rounded-lg border border-(--line) px-4 py-2 text-sm disabled:opacity-50"
         >
-          Tick + watch now
+          Sample metrics & check alerts
         </button>
         <button
           type="button"
@@ -137,9 +159,13 @@ export function ChaosConsole() {
           disabled={busy !== null}
           className="rounded-lg border border-(--danger) px-4 py-2 text-sm text-(--danger) disabled:opacity-50"
         >
-          Clear faults
+          Clear chaos state
         </button>
       </div>
+      <p className="text-xs text-(--muted)">
+        Background timers already sample every few seconds. Use these buttons to
+        force one checkout or one metrics+alert pass without waiting.
+      </p>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <pre className="panel overflow-auto p-3 text-xs text-(--muted)">

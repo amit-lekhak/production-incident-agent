@@ -18,7 +18,21 @@ export function DiagnoseButton({ incidentId }: { incidentId: string }) {
         body: JSON.stringify({ incidentId, forceOracle }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "diagnose failed");
+      if (!res.ok) {
+        const err =
+          typeof json.error === "object"
+            ? (json.error?.message ?? JSON.stringify(json.error))
+            : json.error;
+        throw new Error(err ?? "diagnose failed");
+      }
+      if (json.ok === false) {
+        router.refresh();
+        const classified = json.classified as
+          { userMessage?: string } | undefined;
+        const fallback =
+          typeof json.error === "string" ? json.error : "diagnose failed";
+        throw new Error(classified?.userMessage ?? fallback);
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -47,9 +61,7 @@ export function DiagnoseButton({ incidentId }: { incidentId: string }) {
           Oracle
         </button>
       </div>
-      {error ? (
-        <div className="text-xs text-(--danger)">{error}</div>
-      ) : null}
+      {error ? <div className="text-xs text-(--danger)">{error}</div> : null}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { ReviewActions } from "@/components/review/ReviewActions";
+import { actionLabel, shortSha } from "@/lib/ui/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -44,14 +45,16 @@ export default async function ReviewPage() {
       <header>
         <h1 className="text-2xl font-semibold">Review</h1>
         <p className="mt-1 text-sm text-(--muted)">
-          Human gate for remediations — approve to merge the PR and redeploy, or
-          reject / request more evidence. The model never writes to git.
+          Diagnose may open a revert PR so you can inspect the fix. Approve
+          merges it and redeploys; reject closes the PR. The model never writes
+          to git.
         </p>
       </header>
 
       {rows.length === 0 ? (
         <div className="panel p-4 text-sm text-(--muted)">
-          Queue empty. Inject a fault, wait for an incident, then run diagnose.
+          Queue empty. Inject a fault on Chaos, wait for an incident (and
+          diagnose), then come back to review the proposed PR.
         </div>
       ) : (
         <div className="space-y-4">
@@ -65,18 +68,26 @@ export default async function ReviewPage() {
                   >
                     {row.title}
                   </Link>
-                  <div className="mt-1 text-sm">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                     <span className="badge bg-[#0c4a6e] text-(--accent)">
-                      {row.recommended_action} →{" "}
-                      {row.action_target.slice(0, 12)}
+                      {actionLabel(row.recommended_action)}
+                      {row.recommended_action === "revert_pr" ||
+                      row.recommended_action === "rollback"
+                        ? ` → ${shortSha(row.action_target)}`
+                        : row.action_target
+                          ? ` → ${row.action_target}`
+                          : ""}
                     </span>
-                    <span className="ml-2 badge bg-(--line)">
-                      {row.confidence}%
+                    <span className="badge bg-(--line)">
+                      {row.confidence}% confidence
                     </span>
                   </div>
                   <p className="mt-2 text-sm text-(--muted)">{row.summary}</p>
                   {row.pr_url ? (
                     <p className="mt-2 text-sm">
+                      <span className="text-(--muted)">
+                        Proposed remediation (awaiting merge):{" "}
+                      </span>
                       <a
                         href={row.pr_url}
                         target="_blank"
@@ -86,8 +97,8 @@ export default async function ReviewPage() {
                         GitHub PR #{row.pr_number}
                       </a>
                       {row.pr_head_sha ? (
-                        <span className="ml-2 text-(--muted)">
-                          head {row.pr_head_sha.slice(0, 12)}
+                        <span className="ml-2 font-mono text-xs text-(--muted)">
+                          {shortSha(row.pr_head_sha)}
                         </span>
                       ) : null}
                     </p>

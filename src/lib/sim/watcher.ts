@@ -1,5 +1,6 @@
 import { appendIncidentEvent } from "@/lib/observability/incident-events";
 import { sql } from "@/lib/db";
+import { incidentTitleFromAlert } from "@/lib/ui/labels";
 import { getServiceId } from "./faults";
 
 export type WatchResult =
@@ -168,7 +169,13 @@ export async function runWatcher(): Promise<WatchResult[]> {
     }
 
     const severity = severityFor(rule.metric, value, rule.threshold);
-    const title = `${rule.name}: ${rule.metric} ${rule.operator} ${rule.threshold} (${label} ${Math.round(value * 1000) / 1000} over ${windowSeconds}s)`;
+    const title = incidentTitleFromAlert({
+      ruleName: rule.name,
+      metric: rule.metric,
+      value,
+      windowSeconds,
+      aggLabel: label,
+    });
 
     const opened = await sql.begin(async (tx) => {
       const [dup] = await tx<{ id: string }[]>`

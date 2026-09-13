@@ -100,7 +100,7 @@ async function seed() {
     )
     VALUES (
       ${serviceId},
-      'Historical: checkout latency after N+1 deploy',
+      'Checkout latency after N+1 deploy',
       'resolved',
       'high',
       'checkout_latency_p95',

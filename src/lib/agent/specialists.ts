@@ -261,51 +261,53 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 87;
-    why = `catalog.lookup avg=${catalogAvgMs}ms lookups/req≈${avgLookups.toFixed(1)} after deploy ${activeSha?.slice(0, 12)}; similar: ${similar.display}`;
+    why = `Catalog lookups ~${avgLookups.toFixed(1)}× per request (avg ${catalogAvgMs}ms) after deploy ${activeSha?.slice(0, 7) ?? "unknown"} — recommend revert.`;
   } else if (/meta!\.source|req\.meta!\.source/.test(checkoutSrc)) {
     cause = "error_spike";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 80;
-    why = "error events / null meta access after deploy";
+    why =
+      "Checkout throws on missing cart metadata after this deploy — recommend revert.";
   } else if (/DB_POOL_SIZE\s*=\s*2/.test(poolText)) {
     cause = "pool_exhaustion";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 82;
-    why = "db pool wait elevated; pool size looks reduced in source";
+    why =
+      "DB pool size reduced to 2 in source; pool wait elevated — recommend revert.";
   } else if (checkoutSrc.includes("chargePaymentSlow")) {
     cause = "payment_timeout";
     action = "disable_flag";
     target = "payments_v2";
     confidence = 84;
     why =
-      "payments latency elevated; dependency isolation preferred over revert_pr";
+      "Payments path is slow under payments_v2 — disable the flag instead of reverting.";
   } else if (avgPay >= 1200 || paymentsP99 >= 1500) {
     cause = "payment_timeout";
     action = "disable_flag";
     target = "payments_v2";
     confidence = 84;
     why =
-      "payments latency elevated; dependency isolation preferred over revert_pr";
+      "Payments latency elevated — disable payments_v2 instead of reverting the deploy.";
   } else if (errorRate >= 0.05 || (errors.rows?.length ?? 0) > 0) {
     cause = "error_spike";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 80;
-    why = "error events / null meta access after deploy";
+    why = "Error rate / error events elevated after deploy — recommend revert.";
   } else if (avgPool >= 400) {
     cause = "pool_exhaustion";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 82;
-    why = "db pool wait elevated; pool size looks reduced in source";
+    why = "DB pool wait elevated — recommend revert of the suspect deploy.";
   } else if (catalogAvgMs >= 200 || avgLookups >= 2.5) {
     cause = "n_plus_one";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 87;
-    why = `catalog.lookup avg=${catalogAvgMs}ms lookups/req≈${avgLookups.toFixed(1)} after deploy ${activeSha?.slice(0, 12)}; similar: ${similar.display}`;
+    why = `Catalog lookups ~${avgLookups.toFixed(1)}× per request (avg ${catalogAvgMs}ms) after deploy ${activeSha?.slice(0, 7) ?? "unknown"} — recommend revert.`;
   }
 
   const hypotheses: HypothesesOutput = {

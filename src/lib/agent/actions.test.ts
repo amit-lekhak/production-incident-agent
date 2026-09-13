@@ -43,7 +43,7 @@ async function setupRevertIncident() {
     )
     VALUES (
       ${serviceId},
-      ${`revert-test-${Date.now()}`},
+      ${`ci-test-revert-${Date.now()}`},
       'awaiting_review',
       'high',
       NOW(),
@@ -100,7 +100,7 @@ describe("revert_pr merge", () => {
       )
       VALUES (
         ${serviceId},
-        ${`no-pr-${Date.now()}`},
+        ${`ci-test-no-pr-${Date.now()}`},
         'awaiting_review',
         'high',
         NOW(),
