@@ -1,25 +1,56 @@
-import { sql } from "@/lib/db";
 import { tickOnce } from "@/lib/sim/ticker";
 import {
   appendIncidentEvent,
   setIncidentStatus,
 } from "@/lib/observability/incident-events";
+import { sql } from "@/lib/db";
 
 const LATENCY = Number(process.env.LATENCY_P95_THRESHOLD_MS ?? 2000);
 const ERROR_RATE = Number(process.env.ERROR_RATE_THRESHOLD ?? 0.05);
 
-export async function verifyRecovery(incidentId: string, samples = 2) {
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+export async function verifyRecovery(incidentId: string) {
+  const samples = Math.max(1, Number(process.env.VERIFY_SAMPLES ?? 3));
+  const intervalMs = Math.max(
+    0,
+    Number(process.env.VERIFY_INTERVAL_MS ?? 1000),
+  );
+  const timeoutMs = Math.max(
+    intervalMs,
+    Number(process.env.VERIFY_TIMEOUT_MS ?? 15_000),
+  );
+
   await setIncidentStatus(incidentId, "verifying");
   await appendIncidentEvent({
     incidentId,
     kind: "verifying",
-    message: "Sampling metrics after action",
+    message: `Sampling metrics after action (samples=${samples}, timeout=${timeoutMs}ms)`,
   });
 
   const readings: Array<{ p95: number; errorRate: number }> = [];
-  for (let i = 0; i < samples; i++) {
+  const started = Date.now();
+
+  while (readings.length < samples && Date.now() - started < timeoutMs) {
     const tick = await tickOnce();
     readings.push({ p95: tick.p95, errorRate: tick.errorRate });
+    if (readings.length < samples && intervalMs > 0) {
+      await sleep(intervalMs);
+    }
+  }
+
+  if (readings.length === 0) {
+    await setIncidentStatus(incidentId, "needs_human", {
+      needsHumanReason: "verify_failed: no metric samples collected",
+    });
+    await appendIncidentEvent({
+      incidentId,
+      kind: "verify_failed",
+      message: "No metric samples collected",
+    });
+    return { ok: false as const, recovered: false, readings, worse: false };
   }
 
   const last = readings[readings.length - 1]!;

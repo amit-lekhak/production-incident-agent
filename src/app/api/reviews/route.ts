@@ -113,19 +113,46 @@ export async function POST(req: Request) {
 
     const verify = await verifyRecovery(incidentId);
     if (!verify.ok) {
-      return Response.json({ ok: false, status: "needs_human", verify });
+      return Response.json({
+        ok: false,
+        status: "needs_human",
+        error: {
+          code: "verify_failed",
+          message: "Metrics did not recover after the approved action",
+        },
+        verify,
+      });
     }
 
-    const postmortem = await writePostmortem(incidentId);
-    const [pm] = await sql<{ id: string }[]>`
-      SELECT id::text AS id FROM postmortems WHERE incident_id = ${incidentId}::uuid
-    `;
-    return Response.json({
-      ok: true,
-      status: "resolved",
-      postmortemId: pm?.id,
-      postmortem,
-    });
+    try {
+      const postmortem = await writePostmortem(incidentId);
+      const [pm] = await sql<{ id: string }[]>`
+        SELECT id::text AS id FROM postmortems WHERE incident_id = ${incidentId}::uuid
+      `;
+      return Response.json({
+        ok: true,
+        status: "resolved",
+        postmortemId: pm?.id,
+        postmortem,
+      });
+    } catch (pmErr) {
+      const message =
+        pmErr instanceof Error ? pmErr.message : String(pmErr);
+      console.error("[postmortem]", incidentId, pmErr);
+      await setIncidentStatus(incidentId, "needs_human", {
+        needsHumanReason: `postmortem_failed: ${message}`,
+      });
+      await appendIncidentEvent({
+        incidentId,
+        kind: "postmortem_failed",
+        message,
+      });
+      return Response.json({
+        ok: false,
+        status: "needs_human",
+        error: { code: "postmortem_failed", message },
+      });
+    }
   } catch (err) {
     if (err instanceof DiagnosisConflictError) {
       return Response.json(
