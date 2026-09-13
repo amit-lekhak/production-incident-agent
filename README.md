@@ -59,5 +59,14 @@ Open http://localhost:3000 — ticker/watcher start on boot. Check `GET /api/hea
 
 ## Docs
 
-- [Architecture](diagrams/ARCHITECTURE.md)
-- [docs/](docs/) Diataxis guides
+Short path is this README. Full set is [docs/](docs/) (tutorial, how-tos, reference, explanation).
+
+- [Tutorial: Getting started](docs/tutorial-getting-started.md)
+- [How to run a chaos scenario](docs/howto-chaos.md)
+- [How to review and merge remediations](docs/howto-review-and-merge.md)
+- [How to run evals](docs/howto-run-evals.md)
+- [Reference: Runtime](docs/reference-runtime.md) (pages, HTTP, env, scripts)
+- [Reference: Agent pipeline](docs/reference-agent-pipeline.md) (tools, statuses, actions)
+- [Reference: Data model](docs/reference-data-model.md)
+- [Explanation: Design decisions](docs/explanation-design-decisions.md)
+- [Architecture diagrams](diagrams/ARCHITECTURE.md)
