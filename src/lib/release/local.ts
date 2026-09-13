@@ -122,7 +122,7 @@ export class LocalReleaseProvider implements ReleaseProvider {
         filesChanged = [];
       }
       return {
-        sha: sha!.slice(0, 12),
+        sha: sha!,
         message: message ?? "",
         author: author ?? "unknown",
         committedAt: committedAt ?? "",

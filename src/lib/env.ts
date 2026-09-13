@@ -34,6 +34,10 @@ const envSchema = z.object({
   VERIFY_TIMEOUT_MS: optionalNumber(15_000),
   EVAL_AGENT_TIMEOUT_MS: optionalNumber(90_000),
   METRIC_RETENTION_HOURS: optionalNumber(6),
+  DIAGNOSIS_MIN_CONFIDENCE: optionalNumber(60),
+  AUTO_DIAGNOSE: z.string().optional().default("true"),
+  PAGE_WEBHOOK_URL: z.string().optional().default(""),
+  WATCHER_MIN_SAMPLES: optionalNumber(2),
   NODE_ENV: z.string().optional().default("development"),
 });
 

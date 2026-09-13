@@ -12,11 +12,13 @@ export type CheckoutRequest = {
   items: CheckoutItem[];
   paymentMethod: string;
   meta?: { source?: string } | null;
+  flags?: { payments_v2?: boolean };
 };
 
 export async function checkout(req: CheckoutRequest) {
   const source = req.meta?.source ?? "web";
   void DB_POOL_SIZE;
+  void req.flags;
 
   // N+1: one slow catalog round-trip per line item (cart size × ~700ms).
   const products = [];

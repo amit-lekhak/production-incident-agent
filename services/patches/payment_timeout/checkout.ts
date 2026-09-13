@@ -1,9 +1,10 @@
 /**
- * BUG: always use slow payments path (payments_v2 misfire).
- * Chaos scenario: payment_timeout
+ * BUG: payments_v2 routes through a slow dependency.
+ * When the host disables payments_v2, checkout falls back to the fast path
+ * without requiring a redeploy.
  */
 import { lookupProduct } from "./catalog";
-import { chargePaymentSlow } from "./payments";
+import { chargePayment, chargePaymentSlow } from "./payments";
 import { DB_POOL_SIZE } from "./pool";
 
 export type CheckoutItem = { productId: string; qty: number };
@@ -12,6 +13,7 @@ export type CheckoutRequest = {
   items: CheckoutItem[];
   paymentMethod: string;
   meta?: { source?: string } | null;
+  flags?: { payments_v2?: boolean };
 };
 
 export async function checkout(req: CheckoutRequest) {
@@ -25,10 +27,17 @@ export async function checkout(req: CheckoutRequest) {
     (sum, p, idx) => sum + p.priceCents * req.items[idx]!.qty,
     0,
   );
-  const payment = await chargePaymentSlow({
-    amountCents: total,
-    method: req.paymentMethod,
-  });
+  // Flag defaults on for this deploy (chaos enables payments_v2).
+  const useV2 = req.flags?.payments_v2 !== false;
+  const payment = useV2
+    ? await chargePaymentSlow({
+        amountCents: total,
+        method: req.paymentMethod,
+      })
+    : await chargePayment({
+        amountCents: total,
+        method: req.paymentMethod,
+      });
   return {
     orderId: `ord_${req.cartId}`,
     totalCents: total,

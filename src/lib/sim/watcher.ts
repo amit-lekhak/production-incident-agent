@@ -10,6 +10,7 @@ export type WatchResult =
       title: string;
       metric: string;
       value: number;
+      severity: string;
     };
 
 const OPEN_STATUSES = [
@@ -20,6 +21,43 @@ const OPEN_STATUSES = [
   "verifying",
   "needs_human",
 ] as const;
+
+const MIN_SAMPLES = Number(process.env.WATCHER_MIN_SAMPLES ?? 2);
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil(sorted.length * p) - 1),
+  );
+  return sorted[idx]!;
+}
+
+function severityFor(metric: string, value: number, threshold: number): string {
+  const ratio = threshold > 0 ? value / threshold : 1;
+  if (metric.includes("error_rate")) {
+    if (value >= threshold * 3) return "critical";
+    if (value >= threshold * 1.5) return "high";
+    return "medium";
+  }
+  if (ratio >= 3) return "critical";
+  if (ratio >= 1.5) return "high";
+  return "medium";
+}
+
+/** Window aggregation: p95 for latency/wait gauges, average for rates. */
+function aggregateWindow(
+  metric: string,
+  values: number[],
+): { value: number; label: string } {
+  const sorted = [...values].sort((a, b) => a - b);
+  if (metric.includes("rate")) {
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    return { value: avg, label: "avg" };
+  }
+  // Stored samples are already per-tick p95/p99; take windowed p95 of those.
+  return { value: percentile(sorted, 0.95), label: "p95" };
+}
 
 export async function runWatcher(): Promise<WatchResult[]> {
   const serviceId = await getServiceId();
@@ -42,22 +80,27 @@ export async function runWatcher(): Promise<WatchResult[]> {
 
   for (const rule of rules) {
     const windowSeconds = Math.max(1, rule.window_seconds || 60);
-    const [agg] = await sql<
-      { avg_value: number | null; sample_count: number }[]
-    >`
-      SELECT AVG(value)::float8 AS avg_value, COUNT(*)::int AS sample_count
+    const samples = await sql<{ value: number }[]>`
+      SELECT value::float8 AS value
       FROM metric_samples
       WHERE service_id = ${serviceId}
         AND name = ${rule.metric}
         AND sampled_at >= NOW() - make_interval(secs => ${windowSeconds})
+      ORDER BY sampled_at ASC
     `;
 
-    if (!agg || agg.sample_count === 0 || agg.avg_value == null) {
-      results.push({ opened: false, reason: `no sample for ${rule.metric}` });
+    if (samples.length < MIN_SAMPLES) {
+      results.push({
+        opened: false,
+        reason: `insufficient samples for ${rule.metric} (n=${samples.length}, need ${MIN_SAMPLES})`,
+      });
       continue;
     }
 
-    const value = Number(agg.avg_value);
+    const { value, label } = aggregateWindow(
+      rule.metric,
+      samples.map((s) => Number(s.value)),
+    );
     const fired =
       rule.operator === ">"
         ? value > rule.threshold
@@ -68,7 +111,7 @@ export async function runWatcher(): Promise<WatchResult[]> {
     if (!fired) {
       results.push({
         opened: false,
-        reason: `${rule.metric} ok (avg ${value} over ${windowSeconds}s, n=${agg.sample_count})`,
+        reason: `${rule.metric} ok (${label} ${value} over ${windowSeconds}s, n=${samples.length})`,
       });
       continue;
     }
@@ -86,8 +129,8 @@ export async function runWatcher(): Promise<WatchResult[]> {
       await appendIncidentEvent({
         incidentId: existing.id,
         kind: "alert_repeat",
-        message: `Alert ${rule.name} still firing (avg ${value})`,
-        meta: { metric: rule.metric, value, windowSeconds },
+        message: `Alert ${rule.name} still firing (${label} ${value})`,
+        meta: { metric: rule.metric, value, windowSeconds, label },
       });
       results.push({
         opened: false,
@@ -99,16 +142,34 @@ export async function runWatcher(): Promise<WatchResult[]> {
 
     const { getReleaseProvider } = await import("@/lib/release");
     let suspectSha: string | null = null;
+    let changePoint = false;
     try {
-      const deploy = await getReleaseProvider().currentDeploy();
+      const provider = getReleaseProvider();
+      const deploy = await provider.currentDeploy();
       suspectSha = deploy?.sha ?? null;
+      // Change-point: only blame deploy if metric rose after it vs prior window half.
+      if (samples.length >= 4) {
+        const mid = Math.floor(samples.length / 2);
+        const before =
+          samples.slice(0, mid).reduce((a, s) => a + Number(s.value), 0) / mid;
+        const after =
+          samples.slice(mid).reduce((a, s) => a + Number(s.value), 0) /
+          (samples.length - mid);
+        changePoint = after > before * 1.3 && after > rule.threshold;
+        if (!changePoint && deploy) {
+          // Still record SHA but mark low confidence via event meta
+          changePoint = false;
+        }
+      } else {
+        changePoint = true; // too few samples to disprove correlation
+      }
     } catch {
       suspectSha = null;
     }
 
-    const title = `${rule.name}: ${rule.metric} ${rule.operator} ${rule.threshold} (avg ${Math.round(value * 1000) / 1000} over ${windowSeconds}s)`;
+    const severity = severityFor(rule.metric, value, rule.threshold);
+    const title = `${rule.name}: ${rule.metric} ${rule.operator} ${rule.threshold} (${label} ${Math.round(value * 1000) / 1000} over ${windowSeconds}s)`;
 
-    // Transactional open: re-check open incident inside the transaction
     const opened = await sql.begin(async (tx) => {
       const [dup] = await tx<{ id: string }[]>`
         SELECT id::text AS id FROM incidents
@@ -130,10 +191,10 @@ export async function runWatcher(): Promise<WatchResult[]> {
           ${rule.id},
           ${title},
           'detected',
-          'high',
+          ${severity},
           ${rule.metric},
           ${value},
-          ${suspectSha},
+          ${changePoint ? suspectSha : null},
           NOW(),
           NOW()
         )
@@ -155,7 +216,10 @@ export async function runWatcher(): Promise<WatchResult[]> {
         metric: rule.metric,
         value,
         windowSeconds,
+        label,
+        severity,
         deploy: suspectSha,
+        changePoint,
       },
     });
 
@@ -165,10 +229,49 @@ export async function runWatcher(): Promise<WatchResult[]> {
       title,
       metric: rule.metric,
       value,
+      severity,
     });
+
+    maybeAutoDiagnose(opened.id);
   }
 
   return results;
+}
+
+/** Rate-limited auto-diagnose so the review queue is "approve this PR", not "remember Diagnose". */
+function maybeAutoDiagnose(incidentId: string) {
+  const enabled =
+    (process.env.AUTO_DIAGNOSE ?? "true").toLowerCase() !== "false";
+  if (!enabled) return;
+
+  const g = globalThis as unknown as {
+    __relayAutoDiagnose?: Set<string>;
+  };
+  if (!g.__relayAutoDiagnose) g.__relayAutoDiagnose = new Set();
+  if (g.__relayAutoDiagnose.has(incidentId)) return;
+  g.__relayAutoDiagnose.add(incidentId);
+
+  void (async () => {
+    try {
+      const { runDiagnosisPipeline } = await import("@/lib/agent/pipeline");
+      await appendIncidentEvent({
+        incidentId,
+        kind: "auto_diagnose",
+        message: "AUTO_DIAGNOSE starting diagnosis pipeline",
+      });
+      await runDiagnosisPipeline(incidentId);
+    } catch (err) {
+      console.error("[watcher] auto-diagnose failed", incidentId, err);
+      await appendIncidentEvent({
+        incidentId,
+        kind: "auto_diagnose_failed",
+        message: err instanceof Error ? err.message : String(err),
+      }).catch(() => undefined);
+    } finally {
+      // Allow re-diagnose later if status returns to detected/needs_human
+      setTimeout(() => g.__relayAutoDiagnose?.delete(incidentId), 60_000);
+    }
+  })();
 }
 
 const globalWatch = globalThis as unknown as {

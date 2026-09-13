@@ -1,7 +1,6 @@
 import { sql } from "@/lib/db";
 import { codeExplain, codePath, codeQuery } from "@/lib/codegraph/query";
 import { getReleaseProvider } from "@/lib/release";
-import { getDeployedRuntime } from "@/lib/sim/deployed-runtime";
 
 export type ToolRuntime = { serviceId: number; incidentId: string };
 
@@ -276,26 +275,22 @@ export function buildTools(rt: ToolRuntime) {
         WHERE service_id = ${rt.serviceId}
         ORDER BY name, sampled_at DESC
       `;
-      const rtLocal = getDeployedRuntime();
-      const [fault] = await sql<
-        { scenario: string; deploy_sha: string | null }[]
-      >`
-        SELECT scenario, deploy_sha FROM active_faults
-        WHERE service_id = ${rt.serviceId} AND active = true
-        ORDER BY injected_at DESC LIMIT 1
+      const flags = await sql<{ key: string; enabled: boolean }[]>`
+        SELECT key, enabled FROM feature_flags
+        WHERE service_id = ${rt.serviceId}
+        ORDER BY key
       `;
+      // Do not expose chaos scenario / active_faults — agents must diagnose from signals.
       return {
-        display: `active=${deploy?.sha?.slice(0, 12) ?? "none"}; scenario=${rtLocal?.scenario ?? fault?.scenario ?? "none"}; metrics=${metrics
+        display: `active=${deploy?.sha?.slice(0, 12) ?? "none"}; flags=${flags
+          .map((f) => `${f.key}=${f.enabled}`)
+          .join(",")}; metrics=${metrics
           .map((m) => displayMetric(m.name, m.value))
           .join(", ")}`,
         deploy: deploy
           ? { sha: deploy.sha, version: deploy.description }
           : null,
-        fault: fault
-          ? { scenario: fault.scenario, deploy_sha: fault.deploy_sha }
-          : rtLocal?.scenario
-            ? { scenario: rtLocal.scenario, deploy_sha: rtLocal.sha }
-            : null,
+        flags,
         metrics,
       };
     },

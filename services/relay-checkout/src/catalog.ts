@@ -1,3 +1,5 @@
+import { pushSpan } from "./spans";
+
 const CATALOG: Record<
   string,
   { id: string; name: string; priceCents: number }
@@ -8,17 +10,38 @@ const CATALOG: Record<
 };
 
 export async function lookupProduct(productId: string) {
-  // Simulated DB round-trip (~8ms healthy).
+  const started = Date.now();
   await sleep(8);
   const product = CATALOG[productId];
   if (!product) throw new Error(`Unknown product ${productId}`);
+  pushSpan({
+    name: "catalog.lookup",
+    durationMs: Date.now() - started,
+    status: "ok",
+    attrs: { productId, nPlusOne: false },
+  });
   return product;
 }
 
 /** Slow per-item lookup — do not call in a loop from checkout (N+1). */
 export async function lookupProductNPlusOne(productId: string) {
+  const started = Date.now();
   await sleep(700);
-  return lookupProduct(productId);
+  const product = await lookupProductBare(productId);
+  pushSpan({
+    name: "catalog.lookup",
+    durationMs: Date.now() - started,
+    status: "ok",
+    attrs: { productId, nPlusOne: true },
+  });
+  return product;
+}
+
+async function lookupProductBare(productId: string) {
+  await sleep(8);
+  const product = CATALOG[productId];
+  if (!product) throw new Error(`Unknown product ${productId}`);
+  return product;
 }
 
 function sleep(ms: number) {

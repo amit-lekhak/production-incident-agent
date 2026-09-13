@@ -134,5 +134,22 @@ export function scoreAgent(input: {
     detail: leak ? `leaked ${leak[0]}` : "clean",
   });
 
+  const evidenceBlob = [
+    ...toolDisplays,
+    ...input.recommendation.evidence.map((e) => e.display),
+    input.recommendation.summary,
+  ]
+    .join("\n")
+    .toLowerCase();
+  // Agents must not receive chaos ground truth (scenario=… / active_faults).
+  const scenarioLeak = evidenceBlob.match(
+    /scenario\s*[:=]\s*(n_plus_one|payment_timeout|error_spike|pool_exhaustion)|active_faults|chaos injected scenario/,
+  );
+  checks.push({
+    name: "no_scenario_leak",
+    ok: !scenarioLeak,
+    detail: scenarioLeak ? `leaked ${scenarioLeak[0]}` : "clean",
+  });
+
   return { pass: checks.every((c) => c.ok), checks };
 }

@@ -1,10 +1,11 @@
+import { createHash } from "node:crypto";
 import { sql } from "@/lib/db";
 import { getServiceId } from "./faults";
 import {
   getDeployedRuntime,
   syncRuntimeFromCurrentDeploy,
+  type CheckoutSpan,
 } from "./deployed-runtime";
-import type { FaultScenario } from "./types";
 
 function jsonb(value: unknown) {
   return sql`${JSON.stringify(value)}::jsonb`;
@@ -12,6 +13,14 @@ function jsonb(value: unknown) {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function fingerprintError(message: string): string {
+  const normalized = message
+    .replace(/\b[0-9a-f]{8,}\b/gi, "HEX")
+    .replace(/\d+/g, "N")
+    .slice(0, 160);
+  return createHash("sha1").update(normalized).digest("hex").slice(0, 16);
 }
 
 export type CheckoutBody = {
@@ -27,9 +36,21 @@ export type CheckoutResult = {
   body: Record<string, unknown>;
   durationMs: number;
   requestId: string;
+  /** Honest spans from the request — used by ticker; not returned to clients. */
+  spans: CheckoutSpan[];
 };
 
 const PRODUCTS = ["sku_mug", "sku_tee", "sku_hat"] as const;
+
+async function loadFeatureFlags(
+  serviceId: number,
+): Promise<{ payments_v2: boolean }> {
+  const rows = await sql<{ key: string; enabled: boolean }[]>`
+    SELECT key, enabled FROM feature_flags WHERE service_id = ${serviceId}
+  `;
+  const map = new Map(rows.map((r) => [r.key, r.enabled]));
+  return { payments_v2: map.get("payments_v2") ?? false };
+}
 
 export async function runCheckout(
   input: CheckoutBody = {},
@@ -39,9 +60,9 @@ export async function runCheckout(
   if (!rt) {
     rt = await syncRuntimeFromCurrentDeploy();
   }
-  const scenario: FaultScenario | null = rt?.scenario ?? null;
   const deploySha = rt?.sha && rt.sha !== "local-workspace" ? rt.sha : null;
   const poolSize = rt?.poolSize ?? 10;
+  const flags = await loadFeatureFlags(serviceId);
 
   const started = Date.now();
   const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -55,23 +76,19 @@ export async function runCheckout(
         ];
   const cartId = input.cartId ?? `cart_${Math.floor(Math.random() * 10000)}`;
   const paymentMethod = input.paymentMethod ?? "card";
-  // error_spike: omit meta so buggy `req.meta!.source` throws
+  // Realistic traffic mix: ~25% of requests omit cart meta (hits null-deref bugs).
   const meta =
     input.meta !== undefined
       ? input.meta
-      : scenario === "error_spike"
+      : Math.random() < 0.25
         ? null
         : { source: "web" };
 
-  const spans: Array<{
-    name: string;
-    durationMs: number;
-    status: string;
-    attrs?: Record<string, unknown>;
-  }> = [];
+  const spans: CheckoutSpan[] = [];
 
   try {
-    if (scenario === "pool_exhaustion" || poolSize <= 2) {
+    // Pool wait modeled from deployed pool config (not chaos labels).
+    if (poolSize <= 2) {
       const wait = 600 + Math.random() * 400;
       await sleep(wait);
       spans.push({
@@ -86,57 +103,26 @@ export async function runCheckout(
       `;
     }
 
-    // Prefer executing the deployed module (real source at SHA).
     if (rt?.module?.checkout) {
-      const before = Date.now();
+      rt.takeSpans(); // clear any stale spans
       const result = await rt.module.checkout({
         cartId,
         items,
         paymentMethod,
         meta,
+        flags,
       });
-      const durationMs = Date.now() - before;
+      const moduleSpans = rt.takeSpans();
+      spans.push(...moduleSpans);
 
-      // Derive spans from scenario for observability tools
-      if (scenario === "n_plus_one") {
-        for (const item of items) {
-          const ms = Math.round(durationMs / items.length);
-          spans.push({
-            name: "catalog.lookup",
-            durationMs: ms,
-            status: "ok",
-            attrs: { productId: item.productId, nPlusOne: true },
-          });
+      for (const s of moduleSpans) {
+        if (s.name === "catalog.lookup") {
           await sql`
             INSERT INTO db_timings (service_id, query_name, duration_ms, rows, sampled_at)
-            VALUES (${serviceId}, 'catalog.lookup', ${ms}, 1, NOW())
-          `;
-        }
-      } else {
-        const per = Math.max(8, Math.round(40 / Math.max(items.length, 1)));
-        for (const item of items) {
-          spans.push({
-            name: "catalog.lookup",
-            durationMs: per,
-            status: "ok",
-            attrs: { productId: item.productId, nPlusOne: false },
-          });
-          await sql`
-            INSERT INTO db_timings (service_id, query_name, duration_ms, rows, sampled_at)
-            VALUES (${serviceId}, 'catalog.lookup', ${per}, 1, NOW())
+            VALUES (${serviceId}, 'catalog.lookup', ${s.durationMs}, 1, NOW())
           `;
         }
       }
-      const payMs =
-        scenario === "payment_timeout"
-          ? Math.max(1600, durationMs - 50)
-          : Math.min(80, Math.max(30, durationMs));
-      spans.push({
-        name: "payments.charge",
-        durationMs: payMs,
-        status: "ok",
-        attrs: { slow: scenario === "payment_timeout" },
-      });
 
       const totalDuration = Date.now() - started;
       await persistTrace(serviceId, requestId, totalDuration, "ok", spans);
@@ -145,8 +131,8 @@ export async function runCheckout(
         VALUES (
           ${serviceId},
           'info',
-          ${`checkout ok cart=${cartId} duration_ms=${totalDuration} sha=${rt.sha.slice(0, 12)}`},
-          ${jsonb({ requestId, cartId, sha: rt.sha, scenario })},
+          ${`checkout ok cart=${cartId} duration_ms=${totalDuration} sha=${(rt.sha ?? "local").slice(0, 12)}`},
+          ${jsonb({ requestId, cartId, sha: rt.sha })},
           NOW()
         )
       `;
@@ -155,40 +141,56 @@ export async function runCheckout(
         status: 200,
         durationMs: totalDuration,
         requestId,
+        spans,
         body: {
           ...result,
           durationMs: totalDuration,
           requestId,
           deploySha,
-          scenario,
         },
       };
     }
 
-    // Fallback inferred timings when jiti cannot load the module
-    if (scenario === "error_spike" && Math.random() < 0.7) {
+    // Fallback when jiti cannot load the module — timings from poolSize + source heuristics.
+    let checkoutSrc = "";
+    if (rt) {
+      try {
+        const { readFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        checkoutSrc = readFileSync(join(rt.workDir, "src/checkout.ts"), "utf8");
+      } catch {
+        checkoutSrc = "";
+      }
+    }
+    const nPlusOne = checkoutSrc.includes("lookupProductNPlusOne");
+    const slowPay =
+      checkoutSrc.includes("chargePaymentSlow") && flags.payments_v2;
+    const nullMetaBug =
+      /meta!\.source/.test(checkoutSrc) ||
+      checkoutSrc.includes("req.meta!.source");
+
+    if (nullMetaBug && meta == null) {
       throw new Error(
-        "TypeError: Cannot read properties of null (reading 'meta')",
+        "TypeError: Cannot read properties of null (reading 'source')",
       );
     }
 
-    const nPlusOne = scenario === "n_plus_one";
     for (const item of items) {
       const ms = nPlusOne ? 700 + Math.random() * 100 : 8 + Math.random() * 4;
       await sleep(ms);
-      spans.push({
+      const span: CheckoutSpan = {
         name: "catalog.lookup",
         durationMs: Math.round(ms),
         status: "ok",
         attrs: { productId: item.productId, nPlusOne },
-      });
+      };
+      spans.push(span);
       await sql`
         INSERT INTO db_timings (service_id, query_name, duration_ms, rows, sampled_at)
         VALUES (${serviceId}, 'catalog.lookup', ${Math.round(ms)}, 1, NOW())
       `;
     }
 
-    const slowPay = scenario === "payment_timeout";
     const payMs = slowPay
       ? 1600 + Math.random() * 400
       : 40 + Math.random() * 20;
@@ -209,7 +211,7 @@ export async function runCheckout(
         ${serviceId},
         'info',
         ${`checkout ok cart=${cartId} duration_ms=${durationMs}`},
-        ${jsonb({ requestId, cartId, scenario, deploySha })},
+        ${jsonb({ requestId, cartId, deploySha })},
         NOW()
       )
     `;
@@ -218,6 +220,7 @@ export async function runCheckout(
       status: 200,
       durationMs,
       requestId,
+      spans,
       body: {
         orderId: `ord_${cartId}`,
         totalCents,
@@ -225,12 +228,14 @@ export async function runCheckout(
         durationMs,
         requestId,
         deploySha,
-        scenario,
       },
     };
   } catch (err) {
     const durationMs = Date.now() - started;
     const message = err instanceof Error ? err.message : String(err);
+    if (rt?.module?.checkout) {
+      spans.push(...rt.takeSpans());
+    }
     spans.push({
       name: "checkout.error",
       durationMs: 1,
@@ -244,13 +249,15 @@ export async function runCheckout(
         ${serviceId},
         'error',
         ${message},
-        ${jsonb({ requestId, scenario, deploySha })},
+        ${jsonb({ requestId, deploySha })},
         NOW()
       )
     `;
+    const fp = fingerprintError(message);
+    const title = message.slice(0, 120);
     const [existingErr] = await sql<{ id: number }[]>`
       SELECT id FROM error_events
-      WHERE service_id = ${serviceId} AND fingerprint = 'checkout.null_meta'
+      WHERE service_id = ${serviceId} AND fingerprint = ${fp}
       ORDER BY last_seen_at DESC LIMIT 1
     `;
     if (existingErr) {
@@ -265,8 +272,8 @@ export async function runCheckout(
         INSERT INTO error_events (service_id, fingerprint, title, message, count, last_seen_at, deploy_sha)
         VALUES (
           ${serviceId},
-          'checkout.null_meta',
-          'TypeError in checkout handler',
+          ${fp},
+          ${title},
           ${message},
           1,
           NOW(),
@@ -279,11 +286,11 @@ export async function runCheckout(
       status: 500,
       durationMs,
       requestId,
+      spans,
       body: {
         error: message,
         requestId,
         durationMs,
-        scenario,
         deploySha,
       },
     };
@@ -295,12 +302,7 @@ async function persistTrace(
   requestId: string,
   durationMs: number,
   status: string,
-  spans: Array<{
-    name: string;
-    durationMs: number;
-    status: string;
-    attrs?: Record<string, unknown>;
-  }>,
+  spans: CheckoutSpan[],
 ) {
   await sql`
     INSERT INTO traces (service_id, request_id, root_span, duration_ms, status, spans, traced_at)

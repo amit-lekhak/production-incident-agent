@@ -77,8 +77,8 @@ async function seed() {
   await sql`
     INSERT INTO feature_flags (service_id, key, enabled, description)
     VALUES
-      (${serviceId}, 'payments_v2', true, 'Route charges through payments v2 client'),
-      (${serviceId}, 'catalog_enrichment', true, 'Per-item catalog enrichment (N+1 when faulty)')
+      (${serviceId}, 'payments_v2', false, 'Route charges through payments v2 client'),
+      (${serviceId}, 'catalog_enrichment', false, 'Per-item catalog enrichment (N+1 when faulty)')
   `;
 
   for (let i = 12; i >= 0; i--) {

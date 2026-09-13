@@ -88,7 +88,7 @@ export class GitHubReleaseProvider implements ReleaseProvider {
           filesChanged = [];
         }
         return {
-          sha: c.sha.slice(0, 12),
+          sha: c.sha,
           message: (c.commit.message ?? "").split("\n")[0] ?? "",
           author: c.commit.author?.name ?? c.author?.login ?? "unknown",
           committedAt: c.commit.author?.date ?? c.commit.committer?.date ?? "",

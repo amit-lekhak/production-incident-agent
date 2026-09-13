@@ -127,11 +127,12 @@ export async function writePostmortem(
       action_items = EXCLUDED.action_items
   `;
 
-  await setIncidentStatus(incidentId, "resolved");
+  // Status is owned by the review/action path — postmortem must not block resolved.
+  await setIncidentStatus(incidentId, "resolved").catch(() => undefined);
   await appendIncidentEvent({
     incidentId,
-    kind: "resolved",
-    message: "Postmortem written; incident resolved",
+    kind: "postmortem_written",
+    message: "Postmortem written",
   });
 
   return output;

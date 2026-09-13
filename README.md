@@ -42,10 +42,10 @@ Open http://localhost:3000 — ticker/watcher start on boot. Check `GET /api/hea
 
 1. **/chaos** — inject `n_plus_one` (commits a real patch + GitHub production deploy)
 2. Hit **/sim/checkout** or wait for the ticker — latency rises because the deployed tree is buggy
-3. Watcher opens an incident when windowed p95 > 2s (`suspect_deploy_sha` = live GitHub SHA)
-4. Diagnose — agents read metrics + GitHub commits/diffs; code opens a **revert PR**
+3. Watcher opens an incident when windowed p95 > 2s (`suspect_deploy_sha` only when change-point correlates)
+4. With `AUTO_DIAGNOSE=true` (default), diagnosis starts automatically; otherwise click Diagnose — agents read metrics + GitHub commits/diffs; code opens a **revert PR** (confidence gate applies)
 5. **/review** — **Merge PR** / more evidence / **Close PR**
-6. On merge, production redeploys, verifier checks metrics, postmortem is written
+6. On merge, production redeploys, verifier checks the **trigger metric**, postmortem is written (failures do not keep the incident open)
 
 ## Scripts
 

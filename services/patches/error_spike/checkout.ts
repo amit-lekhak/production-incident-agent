@@ -12,10 +12,12 @@ export type CheckoutRequest = {
   items: CheckoutItem[];
   paymentMethod: string;
   meta?: { source?: string } | null;
+  flags?: { payments_v2?: boolean };
 };
 
 export async function checkout(req: CheckoutRequest) {
   void DB_POOL_SIZE;
+  void req.flags;
   // Intentional bug: assume meta is always present.
   const source = req.meta!.source!;
 

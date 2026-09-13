@@ -1,37 +1,50 @@
 import { sql } from "@/lib/db";
 import { runCheckout } from "./checkout";
-import { getActiveFault, getServiceId } from "./faults";
+import { getServiceId } from "./faults";
 
 function jsonb(value: unknown) {
   return sql`${JSON.stringify(value)}::jsonb`;
 }
 
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil(sorted.length * p) - 1),
+  );
+  return sorted[idx]!;
+}
+
 /** Sample live checkout behavior into metric_samples. */
 export async function tickOnce() {
   const serviceId = await getServiceId();
-  const fault = await getActiveFault(serviceId);
 
   const samples: number[] = [];
+  const payMs: number[] = [];
+  const poolMs: number[] = [];
   let errors = 0;
   const n = 5;
   for (let i = 0; i < n; i++) {
     const result = await runCheckout();
     samples.push(result.durationMs);
     if (!result.ok) errors += 1;
+    for (const span of result.spans) {
+      if (span.name === "payments.charge") payMs.push(span.durationMs);
+      if (span.name === "db.pool.wait") poolMs.push(span.durationMs);
+    }
   }
 
   samples.sort((a, b) => a - b);
-  const p95 =
-    samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))] ??
-    0;
+  const p95 = percentile(samples, 0.95);
   const errorRate = errors / n;
 
-  let poolWait = 5 + Math.random() * 10;
-  let paymentsP99 = 50 + Math.random() * 30;
-  if (fault?.scenario === "pool_exhaustion")
-    poolWait = 700 + Math.random() * 200;
-  if (fault?.scenario === "payment_timeout")
-    paymentsP99 = 1800 + Math.random() * 400;
+  payMs.sort((a, b) => a - b);
+  poolMs.sort((a, b) => a - b);
+  // Derive dependency metrics from spans observed this tick (not chaos labels).
+  const paymentsP99 =
+    payMs.length > 0 ? percentile(payMs, 0.99) : 50 + Math.random() * 30;
+  const poolWait =
+    poolMs.length > 0 ? percentile(poolMs, 0.95) : 5 + Math.random() * 10;
 
   const at = new Date().toISOString();
   await sql`
@@ -57,7 +70,12 @@ export async function tickOnce() {
     errorRate,
     poolWait,
     paymentsP99,
-    fault: fault?.scenario ?? null,
+    metrics: {
+      checkout_latency_p95: p95,
+      checkout_error_rate: errorRate,
+      db_pool_wait_ms: poolWait,
+      payments_latency_p99: paymentsP99,
+    } as Record<string, number>,
   };
 }
 
@@ -84,7 +102,6 @@ export function ensureTicker() {
         state.running = false;
       });
   }, interval);
-  // fire once soon
   void tickOnce().catch(() => undefined);
 }
 

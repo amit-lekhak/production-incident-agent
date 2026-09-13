@@ -3,7 +3,7 @@
  * Live at the GitHub-deployed SHA. Edit here to introduce bugs and real history.
  */
 import { lookupProduct } from "./catalog";
-import { chargePayment } from "./payments";
+import { chargePayment, chargePaymentV2 } from "./payments";
 import { DB_POOL_SIZE } from "./pool";
 
 export type CheckoutItem = { productId: string; qty: number };
@@ -12,6 +12,8 @@ export type CheckoutRequest = {
   items: CheckoutItem[];
   paymentMethod: string;
   meta?: { source?: string } | null;
+  /** Runtime feature flags injected by the host (not stored in git). */
+  flags?: { payments_v2?: boolean };
 };
 
 export async function checkout(req: CheckoutRequest) {
@@ -29,10 +31,16 @@ export async function checkout(req: CheckoutRequest) {
     (sum, p, idx) => sum + p.priceCents * req.items[idx]!.qty,
     0,
   );
-  const payment = await chargePayment({
-    amountCents: total,
-    method: req.paymentMethod,
-  });
+  const useV2 = req.flags?.payments_v2 === true;
+  const payment = useV2
+    ? await chargePaymentV2({
+        amountCents: total,
+        method: req.paymentMethod,
+      })
+    : await chargePayment({
+        amountCents: total,
+        method: req.paymentMethod,
+      });
   return {
     orderId: `ord_${req.cartId}`,
     totalCents: total,

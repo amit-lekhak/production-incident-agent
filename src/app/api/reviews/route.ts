@@ -16,6 +16,8 @@ import { flushTelemetry } from "@/lib/observability/langfuse";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
+const NOOP_ACTIONS = new Set(["watch", "page_human"]);
+
 const schema = z.object({
   incidentId: z.string().uuid(),
   decision: z.enum(["approved", "rejected", "more_evidence"]),
@@ -106,10 +108,40 @@ export async function POST(req: Request) {
       });
     }
 
-    // approved
+    const [rec] = await sql<{ recommended_action: string }[]>`
+      SELECT recommended_action FROM recommendations
+      WHERE incident_id = ${incidentId}::uuid
+      ORDER BY created_at DESC LIMIT 1
+    `;
+
     const action = await executeApprovedAction(incidentId);
     if (!action.ok) {
       return Response.json({ ok: false, status: "needs_human", action });
+    }
+
+    // No-op actions do not change prod — skip verify and resolve.
+    if (rec && NOOP_ACTIONS.has(rec.recommended_action)) {
+      await setIncidentStatus(incidentId, "resolved");
+      await appendIncidentEvent({
+        incidentId,
+        kind: "resolved",
+        message: `Approved ${rec.recommended_action} — no verify required`,
+      });
+      try {
+        await writePostmortem(incidentId);
+      } catch (pmErr) {
+        console.error("[postmortem]", incidentId, pmErr);
+        await appendIncidentEvent({
+          incidentId,
+          kind: "postmortem_failed",
+          message: pmErr instanceof Error ? pmErr.message : String(pmErr),
+        });
+      }
+      return Response.json({
+        ok: true,
+        status: "resolved",
+        skippedVerify: true,
+      });
     }
 
     const verify = await verifyRecovery(incidentId);
@@ -125,32 +157,33 @@ export async function POST(req: Request) {
       });
     }
 
+    // Metrics recovered — resolve even if postmortem fails.
+    await setIncidentStatus(incidentId, "resolved");
+    let postmortemId: string | undefined;
     try {
       const postmortem = await writePostmortem(incidentId);
       const [pm] = await sql<{ id: string }[]>`
         SELECT id::text AS id FROM postmortems WHERE incident_id = ${incidentId}::uuid
       `;
+      postmortemId = pm?.id;
       return Response.json({
         ok: true,
         status: "resolved",
-        postmortemId: pm?.id,
+        postmortemId,
         postmortem,
       });
     } catch (pmErr) {
       const message = pmErr instanceof Error ? pmErr.message : String(pmErr);
       console.error("[postmortem]", incidentId, pmErr);
-      await setIncidentStatus(incidentId, "needs_human", {
-        needsHumanReason: `postmortem_failed: ${message}`,
-      });
       await appendIncidentEvent({
         incidentId,
         kind: "postmortem_failed",
         message,
       });
       return Response.json({
-        ok: false,
-        status: "needs_human",
-        error: { code: "postmortem_failed", message },
+        ok: true,
+        status: "resolved",
+        postmortemError: message,
       });
     }
   } catch (err) {

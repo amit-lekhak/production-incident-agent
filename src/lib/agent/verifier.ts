@@ -12,7 +12,23 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function defaultThreshold(metric: string | null | undefined): number {
+  if (!metric) return LATENCY;
+  if (metric.includes("error_rate")) return ERROR_RATE;
+  if (metric.includes("pool")) return 500;
+  if (metric.includes("payments")) return 1500;
+  return LATENCY;
+}
+
 export async function verifyRecovery(incidentId: string) {
+  const [incident] = await sql<
+    { trigger_metric: string | null; trigger_value: number | null }[]
+  >`
+    SELECT trigger_metric, trigger_value FROM incidents WHERE id = ${incidentId}::uuid
+  `;
+  const triggerMetric = incident?.trigger_metric ?? "checkout_latency_p95";
+  const threshold = defaultThreshold(triggerMetric);
+
   const samples = Math.max(1, Number(process.env.VERIFY_SAMPLES ?? 3));
   const intervalMs = Math.max(
     0,
@@ -27,15 +43,30 @@ export async function verifyRecovery(incidentId: string) {
   await appendIncidentEvent({
     incidentId,
     kind: "verifying",
-    message: `Sampling metrics after action (samples=${samples}, timeout=${timeoutMs}ms)`,
+    message: `Sampling ${triggerMetric} after action (samples=${samples}, threshold=${threshold}, timeout=${timeoutMs}ms)`,
   });
 
-  const readings: Array<{ p95: number; errorRate: number }> = [];
+  const readings: Array<{
+    trigger: number;
+    p95: number;
+    errorRate: number;
+  }> = [];
   const started = Date.now();
 
   while (readings.length < samples && Date.now() - started < timeoutMs) {
     const tick = await tickOnce();
-    readings.push({ p95: tick.p95, errorRate: tick.errorRate });
+    const trigger =
+      tick.metrics[triggerMetric] ??
+      (triggerMetric === "checkout_latency_p95"
+        ? tick.p95
+        : triggerMetric === "checkout_error_rate"
+          ? tick.errorRate
+          : triggerMetric === "db_pool_wait_ms"
+            ? tick.poolWait
+            : triggerMetric === "payments_latency_p99"
+              ? tick.paymentsP99
+              : tick.p95);
+    readings.push({ trigger, p95: tick.p95, errorRate: tick.errorRate });
     if (readings.length < samples && intervalMs > 0) {
       await sleep(intervalMs);
     }
@@ -54,15 +85,16 @@ export async function verifyRecovery(incidentId: string) {
   }
 
   const last = readings[readings.length - 1]!;
-  const recovered = last.p95 < LATENCY && last.errorRate < ERROR_RATE;
-  const worse = readings.length > 1 && last.p95 > readings[0]!.p95 * 1.2;
+  const recovered = last.trigger < threshold;
+  const worse =
+    readings.length > 1 && last.trigger > readings[0]!.trigger * 1.2;
 
   if (recovered) {
     await appendIncidentEvent({
       incidentId,
       kind: "verify_ok",
-      message: `Metrics recovered p95=${Math.round(last.p95)}ms errorRate=${(last.errorRate * 100).toFixed(2)}%`,
-      meta: { readings },
+      message: `${triggerMetric}=${Math.round(last.trigger * 1000) / 1000} recovered (threshold ${threshold})`,
+      meta: { readings, triggerMetric, threshold },
     });
     return { ok: true as const, recovered: true, readings };
   }
@@ -75,8 +107,8 @@ export async function verifyRecovery(incidentId: string) {
   await appendIncidentEvent({
     incidentId,
     kind: "verify_failed",
-    message: `p95=${Math.round(last.p95)}ms errorRate=${(last.errorRate * 100).toFixed(2)}%`,
-    meta: { readings, worse },
+    message: `${triggerMetric}=${Math.round(last.trigger * 1000) / 1000} (threshold ${threshold})`,
+    meta: { readings, worse, triggerMetric, threshold },
   });
   return { ok: false as const, recovered: false, readings, worse };
 }

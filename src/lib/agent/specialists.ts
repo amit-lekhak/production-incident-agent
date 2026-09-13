@@ -68,6 +68,7 @@ export async function runIncidentAgent(
     system: `You are the Incident Agent for Relay Checkout.
 Gather evidence with tools. Do NOT recommend or execute actions.
 Call get_service_health, query_metrics, query_traces, list_deployments, and any other needed tools.
+Infer causes from metrics/traces/diffs/source — never expect a "scenario" label in tool output.
 Typical causes: n_plus_one, payment_timeout, error_spike, pool_exhaustion.`,
     prompt: `Investigate incident: ${incidentTitle}
 Use tools now to gather evidence. Prefer tool display strings over invention.`,
@@ -169,6 +170,10 @@ Output a recommendation with confidence.`,
 /** Deterministic fallback when Gemini is unavailable — used by evals/oracle and no-key demos.
  * Infers cause from traces/metrics/source/diff — does not peek at active_faults.scenario.
  */
+function checkoutLooksNPlusOne(src: string) {
+  return src.includes("lookupProductNPlusOne");
+}
+
 export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   hypotheses: HypothesesOutput;
   recommendation: RecommendationOutput;
@@ -177,15 +182,37 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   const health = await tools.get_service_health();
   const traces = await tools.query_traces({ limit: 8 });
   const deploys = await tools.list_deployments({ limit: 5 });
-  const similar = await tools.list_similar_incidents({
-    causeHint: "n_plus_one",
-  });
   const source = await tools.read_source({ path: "src/checkout.ts" });
   const poolSrc = await tools.read_source({ path: "src/pool.ts" });
   const diff = await tools.diff_deploys({});
   const errors = await tools.list_errors({ limit: 5 });
   const db = await tools.query_db_timings({ minutes: 15 });
   const metrics = health.metrics ?? [];
+
+  // Infer similar-incident hint from live signals (not a hardcoded cause).
+  let causeHint: string | undefined;
+  const errRate =
+    metrics.find((m: { name: string }) => m.name === "checkout_error_rate")
+      ?.value ?? 0;
+  const payP99 =
+    metrics.find((m: { name: string }) => m.name === "payments_latency_p99")
+      ?.value ?? 0;
+  const poolMetric =
+    metrics.find((m: { name: string }) => m.name === "db_pool_wait_ms")
+      ?.value ?? 0;
+  if (checkoutLooksNPlusOne(source.text) || (db.catalogAvgMs ?? 0) >= 200) {
+    causeHint = "n_plus_one";
+  } else if (payP99 >= 1000 || source.text.includes("chargePaymentSlow")) {
+    causeHint = "payment_timeout";
+  } else if (errRate >= 0.05 || (errors.rows?.length ?? 0) > 0) {
+    causeHint = "error_spike";
+  } else if (poolMetric >= 400 || /DB_POOL_SIZE\s*=\s*2/.test(poolSrc.text)) {
+    causeHint = "pool_exhaustion";
+  }
+  const similar = await tools.list_similar_incidents({
+    causeHint,
+    limit: 5,
+  });
 
   const activeSha = health.deploy?.sha ?? null;
   const catalogAvgMs = db.catalogAvgMs;
@@ -220,7 +247,7 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
 
   const checkoutSrc = source.text;
   const poolText = poolSrc.text;
-  const srcText = `${checkoutSrc}\n${poolText}\n${diff.diff}`;
+  void `${checkoutSrc}\n${poolText}\n${diff.diff}`;
 
   let cause: HypothesesOutput["hypotheses"][0]["cause_type"] = "unknown";
   let action: RecommendationOutput["recommended_action"] = "page_human";
@@ -229,7 +256,7 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   let why = "Insufficient signal";
 
   // Prefer live source signals first so stale metrics cannot override the deploy.
-  if (checkoutSrc.includes("lookupProductNPlusOne")) {
+  if (checkoutLooksNPlusOne(checkoutSrc)) {
     cause = "n_plus_one";
     action = "revert_pr";
     target = activeSha ?? "unknown";

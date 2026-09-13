@@ -12,6 +12,7 @@ flowchart TD
   Watch["Watcher code: alert rules"]
   Dedup{"Duplicate open incident for same service plus rule?"}
   Open["Create incident status=detected"]
+  Auto["AUTO_DIAGNOSE pipeline (optional)"]
   IncAgent["Incident Agent tools plus structured hypotheses"]
   IncFail{"Gemini / tool / schema error?"}
   Hyp["Persist hypotheses"]
@@ -22,7 +23,7 @@ flowchart TD
   Human{"Approve / reject / more evidence"}
   Act["Action executor code only"]
   ActFail{"Rollback / flag change fails?"}
-  Ver["Verifier code: metrics recovered?"]
+  Ver["Verifier code: trigger metric recovered?"]
   Recov{"Recovered / timeout / worse"}
   Post["Postmortem Agent"]
   Done["status=resolved"]
@@ -33,7 +34,8 @@ flowchart TD
   Watch --> Dedup
   Dedup -->|yes| Watch
   Dedup -->|no| Open
-  Open --> IncAgent
+  Open --> Auto
+  Auto --> IncAgent
   IncAgent --> IncFail
   IncFail -->|retryable timeout rpm tpm transient| IncAgent
   IncFail -->|auth quota unknown after retries| NeedsHuman1["status=needs_human diagnosis_failed"]
@@ -102,6 +104,8 @@ flowchart LR
   Evidence --> tools
   Actions --> write
 ```
+
+Detection opens `detected` then optionally kicks `AUTO_DIAGNOSE` (default on). Humans still gate every mutation.
 
 ## 3. Observability layers
 

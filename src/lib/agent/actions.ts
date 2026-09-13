@@ -6,6 +6,7 @@ import {
   appendIncidentEvent,
   setIncidentStatus,
 } from "@/lib/observability/incident-events";
+import { pageHuman } from "./page-human";
 
 function jsonb(value: unknown) {
   return sql`${JSON.stringify(value)}::jsonb`;
@@ -19,17 +20,18 @@ export async function executeApprovedAction(incidentId: string) {
       id: number;
       pr_number: number | null;
       pr_url: string | null;
+      summary: string;
     }[]
   >`
-    SELECT id, recommended_action, action_target, pr_number, pr_url
+    SELECT id, recommended_action, action_target, pr_number, pr_url, summary
     FROM recommendations
     WHERE incident_id = ${incidentId}::uuid
     ORDER BY created_at DESC LIMIT 1
   `;
   if (!rec) throw new Error("No recommendation to execute");
 
-  const [incident] = await sql<{ service_id: number }[]>`
-    SELECT service_id FROM incidents WHERE id = ${incidentId}::uuid
+  const [incident] = await sql<{ service_id: number; title: string }[]>`
+    SELECT service_id, title FROM incidents WHERE id = ${incidentId}::uuid
   `;
   if (!incident) throw new Error("Incident missing");
 
@@ -78,38 +80,27 @@ export async function executeApprovedAction(incidentId: string) {
         SET enabled = false
         WHERE service_id = ${incident.service_id} AND key = ${rec.action_target}
       `;
-      // Restore healthy checkout source via revert of live deploy when flag alone is enough
-      await clearFaults();
-      // For payment_timeout chaos the slow path is in the deployed tree — also open/merge
-      // is not required; re-deploy previous SHA so timings recover without a full revert PR.
-      const deploys = await provider.listDeployments(2);
-      const prev = deploys[1];
-      if (prev) {
-        const deploy = await provider.createDeployment(
-          prev.sha,
-          `Incident ${incidentId}: disable_flag ${rec.action_target}; restore prior deploy`,
-        );
-        await activateDeployedSha(deploy.sha);
-        result = {
-          flag: rec.action_target,
-          enabled: false,
-          restoredSha: deploy.sha,
-        };
-      } else {
-        result = { flag: rec.action_target, enabled: false };
-      }
+      // Flag is read by the live checkout path — no redeploy required.
+      result = { flag: rec.action_target, enabled: false };
     } else if (rec.recommended_action === "restart") {
       await clearFaults();
       const current = await provider.currentDeploy();
       if (current) await activateDeployedSha(current.sha);
       result = { restarted: true, sha: current?.sha ?? null };
-    } else if (
-      rec.recommended_action === "watch" ||
-      rec.recommended_action === "page_human"
-    ) {
-      result = { noted: rec.recommended_action };
+    } else if (rec.recommended_action === "page_human") {
+      const page = await pageHuman({
+        incidentId,
+        title: incident.title,
+        summary: rec.summary,
+        actionTarget: rec.action_target,
+      });
+      result = { noted: "page_human", ...page };
+      if (!page.ok) {
+        throw new Error(`page_human webhook failed: ${page.detail}`);
+      }
+    } else if (rec.recommended_action === "watch") {
+      result = { noted: "watch" };
     } else if (rec.recommended_action === "rollback") {
-      // Legacy alias — treat as revert_pr if PR exists
       if (rec.pr_number) {
         const merged = await provider.mergePr(rec.pr_number);
         const deploy = await provider.createDeployment(

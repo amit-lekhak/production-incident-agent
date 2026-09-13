@@ -17,10 +17,10 @@
       "breakpoints": true
     },
     {
-      "idx": 2,
+      "idx": 3,
       "version": "7",
-      "when": 1789301000000,
-      "tag": "0002_drop_git_tables",
+      "when": 1789302000000,
+      "tag": "0003_open_incident_unique",
       "breakpoints": true
     }
   ]

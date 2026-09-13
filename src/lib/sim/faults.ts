@@ -100,8 +100,8 @@ export async function injectFault(scenario: FaultScenario) {
     VALUES (
       ${serviceId},
       'warn',
-      ${`Chaos injected scenario=${scenario} deploy=${deploy.sha.slice(0, 12)}`},
-      ${jsonb({ scenario, deploySha: deploy.sha })},
+      ${`Deploy marked live sha=${deploy.sha.slice(0, 12)} (${meta.summary})`},
+      ${jsonb({ deploySha: deploy.sha, version: meta.version })},
       NOW()
     )
   `;

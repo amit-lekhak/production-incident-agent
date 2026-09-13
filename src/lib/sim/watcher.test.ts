@@ -11,16 +11,19 @@ function jsonb(value: unknown) {
 
 describe("watcher window", () => {
   it("does not open on a single out-of-window spike", async () => {
-    const serviceId = await getServiceId();
-    const [rule] = await sql<{ id: number; window_seconds: number }[]>`
+    const prev = process.env.AUTO_DIAGNOSE;
+    process.env.AUTO_DIAGNOSE = "false";
+    try {
+      const serviceId = await getServiceId();
+      const [rule] = await sql<{ id: number; window_seconds: number }[]>`
       SELECT id, window_seconds FROM alert_rules
       WHERE service_id = ${serviceId} AND metric = 'checkout_latency_p95'
       LIMIT 1
     `;
-    assert.ok(rule);
+      assert.ok(rule);
 
-    // Close any open latency incidents for this rule
-    await sql`
+      // Close any open latency incidents for this rule
+      await sql`
       UPDATE incidents
       SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
       WHERE service_id = ${serviceId}
@@ -28,13 +31,13 @@ describe("watcher window", () => {
         AND status NOT IN ('resolved', 'closed_rejected')
     `;
 
-    await sql`
+      await sql`
       DELETE FROM metric_samples
       WHERE service_id = ${serviceId} AND name = 'checkout_latency_p95'
     `;
 
-    // Old spike outside the window
-    await sql`
+      // Old spike outside the window
+      await sql`
       INSERT INTO metric_samples (service_id, name, value, labels, sampled_at)
       VALUES (
         ${serviceId},
@@ -45,36 +48,43 @@ describe("watcher window", () => {
       )
     `;
 
-    // Healthy samples inside the window
-    await sql`
+      // Healthy samples inside the window
+      await sql`
       INSERT INTO metric_samples (service_id, name, value, labels, sampled_at)
       VALUES
         (${serviceId}, 'checkout_latency_p95', 400, ${jsonb({})}, NOW() - INTERVAL '10 seconds'),
         (${serviceId}, 'checkout_latency_p95', 450, ${jsonb({})}, NOW())
     `;
 
-    const results = await runWatcher();
-    const latency = results.find(
-      (r) => r.opened && r.metric === "checkout_latency_p95",
-    );
-    assert.equal(latency, undefined);
+      const results = await runWatcher();
+      const latency = results.find(
+        (r) => r.opened && r.metric === "checkout_latency_p95",
+      );
+      assert.equal(latency, undefined);
 
-    const closed = results.find(
-      (r) => !r.opened && r.reason.includes("checkout_latency_p95 ok"),
-    );
-    assert.ok(closed, `expected ok reason, got ${JSON.stringify(results)}`);
+      const closed = results.find(
+        (r) => !r.opened && r.reason.includes("checkout_latency_p95 ok"),
+      );
+      assert.ok(closed, `expected ok reason, got ${JSON.stringify(results)}`);
+    } finally {
+      if (prev === undefined) delete process.env.AUTO_DIAGNOSE;
+      else process.env.AUTO_DIAGNOSE = prev;
+    }
   });
 
-  it("opens when window average exceeds threshold", async () => {
-    const serviceId = await getServiceId();
-    const [rule] = await sql<{ id: number }[]>`
+  it("opens when window p95 exceeds threshold", async () => {
+    const prev = process.env.AUTO_DIAGNOSE;
+    process.env.AUTO_DIAGNOSE = "false";
+    try {
+      const serviceId = await getServiceId();
+      const [rule] = await sql<{ id: number }[]>`
       SELECT id FROM alert_rules
       WHERE service_id = ${serviceId} AND metric = 'checkout_latency_p95'
       LIMIT 1
     `;
-    assert.ok(rule);
+      assert.ok(rule);
 
-    await sql`
+      await sql`
       UPDATE incidents
       SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
       WHERE service_id = ${serviceId}
@@ -82,22 +92,26 @@ describe("watcher window", () => {
         AND status NOT IN ('resolved', 'closed_rejected')
     `;
 
-    await sql`
+      await sql`
       DELETE FROM metric_samples
       WHERE service_id = ${serviceId} AND name = 'checkout_latency_p95'
     `;
 
-    await sql`
+      await sql`
       INSERT INTO metric_samples (service_id, name, value, labels, sampled_at)
       VALUES
         (${serviceId}, 'checkout_latency_p95', 3000, ${jsonb({})}, NOW() - INTERVAL '5 seconds'),
         (${serviceId}, 'checkout_latency_p95', 3500, ${jsonb({})}, NOW())
     `;
 
-    const results = await runWatcher();
-    const opened = results.find(
-      (r) => r.opened && "metric" in r && r.metric === "checkout_latency_p95",
-    );
-    assert.ok(opened?.opened);
+      const results = await runWatcher();
+      const opened = results.find(
+        (r) => r.opened && "metric" in r && r.metric === "checkout_latency_p95",
+      );
+      assert.ok(opened?.opened);
+    } finally {
+      if (prev === undefined) delete process.env.AUTO_DIAGNOSE;
+      else process.env.AUTO_DIAGNOSE = prev;
+    }
   });
 });
