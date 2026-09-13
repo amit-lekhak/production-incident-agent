@@ -22,6 +22,7 @@ export async function GET() {
     dbError,
     ticker: tickerRunning() ? "running" : "stopped",
     watcher: watcherRunning() ? "running" : "stopped",
+    github: env.GITHUB_REPO,
     gemini: hasGeminiKey(env) ? "configured" : "missing",
     langfuse: hasLangfuse(env) ? "configured" : "missing",
   };
