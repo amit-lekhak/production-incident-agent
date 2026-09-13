@@ -10,7 +10,7 @@ import {
   type GraphNode,
 } from "./types";
 
-const FIXTURE_ROOT = join(process.cwd(), "fixtures/relay-checkout");
+const FIXTURE_ROOT = join(process.cwd(), "services/relay-checkout");
 const GRAPH_PATH = join(FIXTURE_ROOT, "graphify-out/graph.json");
 
 let cached: CodeGraph | null = null;

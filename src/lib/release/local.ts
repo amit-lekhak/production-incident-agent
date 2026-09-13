@@ -272,8 +272,6 @@ export function readTreeAsMap(
   dir: string,
   prefix = "",
 ): Record<string, string> {
-  const { readdirSync, statSync } =
-    require("node:fs") as typeof import("node:fs");
   const out: Record<string, string> = {};
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);

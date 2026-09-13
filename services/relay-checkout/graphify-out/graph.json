@@ -1,0 +1,170 @@
+{
+  "nodes": [
+    {
+      "id": "file:src/catalog.ts",
+      "kind": "file",
+      "name": "src/catalog.ts",
+      "file": "src/catalog.ts",
+      "line": 1,
+      "summary": "Fixture source src/catalog.ts"
+    },
+    {
+      "id": "lookupProduct",
+      "kind": "function",
+      "name": "lookupProduct",
+      "file": "src/catalog.ts",
+      "line": 10,
+      "summary": "Function lookupProduct in src/catalog.ts"
+    },
+    {
+      "id": "lookupProductNPlusOne",
+      "kind": "function",
+      "name": "lookupProductNPlusOne",
+      "file": "src/catalog.ts",
+      "line": 19,
+      "summary": "Function lookupProductNPlusOne in src/catalog.ts"
+    },
+    {
+      "id": "sleep",
+      "kind": "function",
+      "name": "sleep",
+      "file": "src/payments.ts",
+      "line": 35,
+      "summary": "Function sleep in src/payments.ts"
+    },
+    {
+      "id": "file:src/checkout.ts",
+      "kind": "file",
+      "name": "src/checkout.ts",
+      "file": "src/checkout.ts",
+      "line": 1,
+      "summary": "Fixture source src/checkout.ts"
+    },
+    {
+      "id": "checkout",
+      "kind": "function",
+      "name": "checkout",
+      "file": "src/checkout.ts",
+      "line": 17,
+      "summary": "Function checkout in src/checkout.ts"
+    },
+    {
+      "id": "file:src/payments.ts",
+      "kind": "file",
+      "name": "src/payments.ts",
+      "file": "src/payments.ts",
+      "line": 1,
+      "summary": "Fixture source src/payments.ts"
+    },
+    {
+      "id": "chargePayment",
+      "kind": "function",
+      "name": "chargePayment",
+      "file": "src/payments.ts",
+      "line": 1,
+      "summary": "Function chargePayment in src/payments.ts"
+    },
+    {
+      "id": "chargePaymentV2",
+      "kind": "function",
+      "name": "chargePaymentV2",
+      "file": "src/payments.ts",
+      "line": 18,
+      "summary": "Function chargePaymentV2 in src/payments.ts"
+    },
+    {
+      "id": "chargePaymentSlow",
+      "kind": "function",
+      "name": "chargePaymentSlow",
+      "file": "src/payments.ts",
+      "line": 27,
+      "summary": "Function chargePaymentSlow in src/payments.ts"
+    },
+    {
+      "id": "file:src/pool.ts",
+      "kind": "file",
+      "name": "src/pool.ts",
+      "file": "src/pool.ts",
+      "line": 1,
+      "summary": "Fixture source src/pool.ts"
+    }
+  ],
+  "edges": [
+    {
+      "from": "file:src/catalog.ts",
+      "to": "lookupProduct",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:src/catalog.ts",
+      "to": "lookupProductNPlusOne",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:src/catalog.ts",
+      "to": "sleep",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "checkout",
+      "to": "lookupProduct",
+      "rel": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "from": "file:src/checkout.ts",
+      "to": "checkout",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "checkout",
+      "to": "lookupProduct",
+      "rel": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "from": "checkout",
+      "to": "chargePayment",
+      "rel": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "from": "file:src/payments.ts",
+      "to": "chargePayment",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:src/payments.ts",
+      "to": "chargePaymentV2",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:src/payments.ts",
+      "to": "chargePaymentSlow",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "file:src/payments.ts",
+      "to": "sleep",
+      "rel": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "from": "checkout",
+      "to": "chargePayment",
+      "rel": "calls",
+      "confidence": "INFERRED"
+    }
+  ],
+  "meta": {
+    "source": "services/relay-checkout",
+    "generator": "rebuild-fallback"
+  }
+}

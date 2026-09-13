@@ -1,0 +1,6 @@
+{
+  "name": "relay-checkout",
+  "private": true,
+  "version": "1.4.2",
+  "description": "Production checkout service — live under GitHub deploy SHA"
+}

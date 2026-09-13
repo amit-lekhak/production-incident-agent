@@ -10,12 +10,12 @@ import {
 import { join, relative } from "node:path";
 import "../src/lib/load-env";
 
-const FIXTURE = join(process.cwd(), "fixtures/relay-checkout");
+const FIXTURE = join(process.cwd(), "services/relay-checkout");
 const OUT = join(FIXTURE, "graphify-out");
 
 /**
  * Prefer Graphify CLI when installed; otherwise rebuild a minimal AST-ish graph
- * from fixtures/relay-checkout/src so demos never require Python.
+ * from services/relay-checkout/src so demos never require Python.
  */
 function main() {
   mkdirSync(OUT, { recursive: true });
@@ -103,7 +103,7 @@ function main() {
     nodes: [...byId.values()],
     edges,
     meta: {
-      source: "fixtures/relay-checkout",
+      source: "services/relay-checkout",
       generator: existsSync(join(OUT, "graph.json"))
         ? "rebuild-fallback"
         : "rebuild-fallback-new",
