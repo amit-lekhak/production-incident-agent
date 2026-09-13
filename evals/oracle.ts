@@ -4,37 +4,16 @@ import { tickOnce } from "../src/lib/sim/ticker";
 import { buildTools } from "../src/lib/agent/tools";
 import { oracleDiagnose } from "../src/lib/agent/specialists";
 import { sql } from "../src/lib/db";
-import type { FaultScenario } from "../src/lib/sim/types";
+import { EVAL_CASES, type EvalCase } from "./cases";
 
 function jsonb(value: unknown) {
   return sql`${JSON.stringify(value)}::jsonb`;
 }
 
-export type OracleCase = {
-  id: string;
-  scenario: FaultScenario;
-  expectCause: string;
-  expectAction: string;
-  expectNotAction?: string;
-};
+export type OracleCase = EvalCase;
+export const ORACLE_CASES = EVAL_CASES;
 
-export const ORACLE_CASES: OracleCase[] = [
-  {
-    id: "n_plus_one_rollback",
-    scenario: "n_plus_one",
-    expectCause: "n_plus_one",
-    expectAction: "rollback",
-  },
-  {
-    id: "payment_timeout_disable_flag",
-    scenario: "payment_timeout",
-    expectCause: "payment_timeout",
-    expectAction: "disable_flag",
-    expectNotAction: "rollback",
-  },
-];
-
-export async function runOracleCase(c: OracleCase) {
+export async function runOracleCase(c: EvalCase) {
   await clearFaults();
   await injectFault(c.scenario);
   await tickOnce();
@@ -70,10 +49,24 @@ export async function runOracleCase(c: OracleCase) {
   const out = await oracleDiagnose(rt);
   const cause = out.hypotheses.hypotheses[0]?.cause_type;
   const action = out.recommendation.recommended_action;
+  const target = out.recommendation.action_target;
+  const [active] = await sql<{ sha: string }[]>`
+    SELECT sha FROM deployments
+    WHERE service_id = ${serviceId} AND status = 'active'
+    ORDER BY deployed_at DESC LIMIT 1
+  `;
+
+  const targetOk =
+    c.expectTarget === "active_sha"
+      ? target === active?.sha
+      : c.expectTarget
+        ? target === c.expectTarget
+        : true;
 
   const pass =
     cause === c.expectCause &&
     action === c.expectAction &&
+    targetOk &&
     (c.expectNotAction ? action !== c.expectNotAction : true);
 
   return {
@@ -81,6 +74,7 @@ export async function runOracleCase(c: OracleCase) {
     pass,
     cause,
     action,
+    target,
     confidence: out.recommendation.confidence_0_100,
     tracesDisplay: traces.display.slice(0, 200),
     codeDisplay: code.display,

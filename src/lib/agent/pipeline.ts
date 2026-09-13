@@ -129,12 +129,18 @@ export async function runDiagnosisPipeline(
       recommendation = out.recommendation;
     } else {
       hypotheses = await withRetry(
-        () => runIncidentAgent(rt, claimed.title),
+        async () => {
+          const r = await runIncidentAgent(rt, claimed.title);
+          return r.hypotheses;
+        },
         "incident-agent",
         incidentId,
       );
       recommendation = await withRetry(
-        () => runEvidenceAgent(rt, hypotheses),
+        async () => {
+          const r = await runEvidenceAgent(rt, hypotheses);
+          return r.recommendation;
+        },
         "evidence-agent",
         incidentId,
       );

@@ -101,18 +101,32 @@ export function classifyProviderError(err: unknown): ClassifiedError {
     err &&
     typeof err === "object" &&
     "name" in err &&
-    (err as { name: string }).name === "AbortError"
+    ((err as { name: string }).name === "AbortError" ||
+      (err as { name: string }).name === "AI_NoOutputGeneratedError" ||
+      (err as { name: string }).name === "NoOutputGeneratedError")
   ) {
+    const isNoOutput = String((err as { name: string }).name).includes(
+      "NoOutput",
+    );
     return {
-      code: "timeout",
+      code: isNoOutput ? "transient" : "timeout",
       retryable: true,
-      retryAfterMs: null,
-      userMessage: userMessageFor("timeout", null),
+      retryAfterMs: isNoOutput ? 1500 : null,
+      userMessage: userMessageFor(isNoOutput ? "transient" : "timeout", null),
       raw: String(err),
     };
   }
 
   const text = collectText(err);
+  if (/no output generated/i.test(text)) {
+    return {
+      code: "transient",
+      retryable: true,
+      retryAfterMs: 1500,
+      userMessage: userMessageFor("transient", 1500),
+      raw: text.slice(0, 2000),
+    };
+  }
   const statusCode = APICallError.isInstance(err) ? err.statusCode : undefined;
   const isRetryable = APICallError.isInstance(err)
     ? err.isRetryable
