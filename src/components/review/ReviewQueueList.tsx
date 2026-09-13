@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { ReviewActions } from "@/components/review/ReviewActions";
-import { actionLabel, shortSha } from "@/lib/ui/labels";
+import {
+  actionLabel,
+  actionTargetLabel,
+  causeLabel,
+  looksLikeDump,
+  nextStepHint,
+  operatorSummary,
+  statusLabel,
+} from "@/lib/ui/labels";
+import { formatLocalTime, formatOpenedAgo } from "@/lib/ui/time";
 import type { PendingReviewRow } from "@/lib/review/pending";
 
 export function ReviewQueueList({
@@ -20,9 +29,25 @@ export function ReviewQueueList({
 
   return (
     <div className="space-y-4">
-      {rows.map((row) => (
-        <div key={row.review_id} className="panel space-y-3 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-2">
+      {rows.map((row) => {
+        const target = actionTargetLabel(
+          row.recommended_action,
+          row.action_target,
+        );
+        const summary = operatorSummary({
+          cause: row.cause_type,
+          action: row.recommended_action,
+          target: row.action_target,
+          summary: row.summary,
+        });
+        const evidence = row.evidence ?? [];
+        const showRawSummary =
+          row.summary &&
+          looksLikeDump(row.summary) &&
+          row.summary.trim() !== summary;
+
+        return (
+          <div key={row.review_id} className="panel space-y-3 p-4">
             <div>
               <Link
                 href={`/incidents/${row.incident_id}`}
@@ -30,21 +55,48 @@ export function ReviewQueueList({
               >
                 {row.title}
               </Link>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                <span className="badge bg-[#0c4a6e] text-(--accent)">
-                  {actionLabel(row.recommended_action)}
-                  {row.recommended_action === "revert_pr" ||
-                  row.recommended_action === "rollback"
-                    ? ` → ${shortSha(row.action_target)}`
-                    : row.action_target
-                      ? ` → ${row.action_target}`
-                      : ""}
-                </span>
-                <span className="badge bg-(--line)">
-                  {row.confidence}% confidence
-                </span>
+              <div className="mt-1 text-xs text-(--muted)">
+                <time
+                  dateTime={row.opened_at}
+                  title={formatLocalTime(row.opened_at)}
+                >
+                  {formatOpenedAgo(row.opened_at)}
+                </time>
+                {" · "}
+                {row.severity}
+                {" · "}
+                {statusLabel(row.status)}
               </div>
-              <p className="mt-2 text-sm text-(--muted)">{row.summary}</p>
+
+              <dl className="mt-3 space-y-1 text-sm">
+                <div>
+                  <dt className="inline text-(--muted)">Likely cause: </dt>
+                  <dd className="inline font-medium">
+                    {causeLabel(row.cause_type)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="inline text-(--muted)">Recommend: </dt>
+                  <dd className="inline font-medium">
+                    {actionLabel(row.recommended_action)}
+                    {target ? ` → ${target}` : ""}
+                    {` (${row.confidence}% confidence)`}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="inline text-(--muted)">Next: </dt>
+                  <dd className="inline">
+                    {nextStepHint({
+                      status: row.status,
+                      action: row.recommended_action,
+                      hasPr: Boolean(row.pr_number) || hasPr,
+                    })}
+                  </dd>
+                </div>
+              </dl>
+
+              <p className="mt-2 text-sm text-(--muted)">{summary}</p>
+
               {row.pr_url ? (
                 <p className="mt-2 text-sm">
                   <span className="text-(--muted)">
@@ -58,18 +110,33 @@ export function ReviewQueueList({
                   >
                     GitHub PR #{row.pr_number}
                   </a>
-                  {row.pr_head_sha ? (
-                    <span className="ml-2 font-mono text-xs text-(--muted)">
-                      {shortSha(row.pr_head_sha)}
-                    </span>
-                  ) : null}
                 </p>
               ) : null}
             </div>
+
+            <ReviewActions incidentId={row.incident_id} hasPr={hasPr} />
+
+            {(evidence.length > 0 || showRawSummary) && (
+              <details className="rounded-lg border border-(--line) p-3 text-xs text-(--muted)">
+                <summary className="cursor-pointer text-sm text-foreground">
+                  Technical evidence
+                </summary>
+                {showRawSummary ? (
+                  <p className="mt-2 whitespace-pre-wrap">{row.summary}</p>
+                ) : null}
+                <ul className="mt-2 space-y-1">
+                  {evidence.map((e, i) => (
+                    <li key={i}>
+                      [{e.supports ? "supports" : "against"}] {e.tool}:{" "}
+                      {e.display}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
-          <ReviewActions incidentId={row.incident_id} hasPr={hasPr} />
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { actionLabel } from "@/lib/ui/labels";
+import { actionLabel, statusLabel } from "@/lib/ui/labels";
+import { formatLocalTime, formatOpenedAgo } from "@/lib/ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -59,10 +60,17 @@ export default async function IncidentsPage() {
             >
               <div>
                 <div className="font-medium">{r.title}</div>
-                <div className="text-xs text-(--muted)">{r.opened_at}</div>
+                <div
+                  className="text-xs text-(--muted)"
+                  title={formatLocalTime(r.opened_at)}
+                >
+                  {formatOpenedAgo(r.opened_at)}
+                </div>
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
-                <span className="badge bg-(--line)">{r.status}</span>
+                <span className="badge bg-(--line)">
+                  {statusLabel(r.status)}
+                </span>
                 {r.recommended_action ? (
                   <span className="badge bg-[#0c4a6e] text-(--accent)">
                     {actionLabel(r.recommended_action)}

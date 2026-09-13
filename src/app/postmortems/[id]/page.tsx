@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sql } from "@/lib/db";
+import { formatLocalTime, formatRelativeTime } from "@/lib/ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,12 @@ export default async function PostmortemPage({
           ← Incident
         </Link>
         <h1 className="mt-1 text-2xl font-semibold">{pm.title}</h1>
-        <div className="text-xs text-(--muted)">{pm.created_at}</div>
+        <div
+          className="text-xs text-(--muted)"
+          title={formatLocalTime(pm.created_at)}
+        >
+          Written {formatRelativeTime(pm.created_at)}
+        </div>
       </header>
 
       <section className="panel space-y-3 p-4 text-sm">
@@ -65,7 +71,14 @@ export default async function PostmortemPage({
           <ul className="space-y-1 text-(--muted)">
             {(pm.timeline ?? []).map((t, i) => (
               <li key={i}>
-                <span className="font-mono text-xs">{t.at}</span> — {t.event}
+                <time
+                  className="text-xs"
+                  dateTime={t.at}
+                  title={formatLocalTime(t.at)}
+                >
+                  {formatRelativeTime(t.at)}
+                </time>{" "}
+                — {t.event}
               </li>
             ))}
           </ul>

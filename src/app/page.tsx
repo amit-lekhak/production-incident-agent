@@ -1,5 +1,7 @@
 import { sql } from "@/lib/db";
 import { getReleaseProvider } from "@/lib/release";
+import { statusLabel } from "@/lib/ui/labels";
+import { formatLocalTime, formatOpenedAgo } from "@/lib/ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -125,11 +127,19 @@ export default async function HomePage() {
                   <li key={i.id}>
                     <a
                       href={`/incidents/${i.id}`}
-                      className="flex items-center justify-between rounded-lg border border-(--line) px-3 py-2 hover:border-(--accent)"
+                      className="flex flex-col gap-1 rounded-lg border border-(--line) px-3 py-2 hover:border-(--accent) sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <span>{i.title}</span>
+                      <div>
+                        <div>{i.title}</div>
+                        <div
+                          className="text-xs text-(--muted)"
+                          title={formatLocalTime(i.opened_at)}
+                        >
+                          {formatOpenedAgo(i.opened_at)}
+                        </div>
+                      </div>
                       <span className="badge bg-(--line) text-(--warn)">
-                        {i.status}
+                        {statusLabel(i.status)}
                       </span>
                     </a>
                   </li>

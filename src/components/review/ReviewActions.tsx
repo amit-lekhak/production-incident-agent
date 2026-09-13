@@ -3,6 +3,31 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+function plainResult(
+  decision: "approved" | "rejected" | "more_evidence",
+  hasPr: boolean,
+  json: { status?: string; postmortemId?: string; ok?: boolean },
+): string {
+  if (decision === "rejected") {
+    return hasPr ? "PR closed." : "Recommendation rejected.";
+  }
+  if (decision === "more_evidence") {
+    return "Re-running diagnosis for more evidence.";
+  }
+  if (json.status === "needs_human") {
+    return "Action ran but needs human follow-up — check the incident.";
+  }
+  if (json.postmortemId || json.status === "resolved") {
+    return hasPr
+      ? "Merged and redeployed. Metrics recovered."
+      : "Approved and resolved.";
+  }
+  if (json.status === "awaiting_review") {
+    return "Updated — still awaiting review.";
+  }
+  return hasPr ? "Merged and redeployed." : "Approved.";
+}
+
 export function ReviewActions({
   incidentId,
   hasPr = false,
@@ -14,10 +39,12 @@ export function ReviewActions({
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState(false);
 
   async function decide(decision: "approved" | "rejected" | "more_evidence") {
     setBusy(decision);
     setMsg(null);
+    setError(false);
     try {
       const res = await fetch("/api/reviews", {
         method: "POST",
@@ -32,12 +59,14 @@ export function ReviewActions({
             : json.error;
         throw new Error(err ?? "review failed");
       }
-      setMsg(JSON.stringify(json));
+      console.debug("[review]", decision, json);
+      setMsg(plainResult(decision, hasPr, json));
       router.refresh();
       if (json.postmortemId) {
         router.push(`/postmortems/${json.postmortemId}`);
       }
     } catch (err) {
+      setError(true);
       setMsg(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
@@ -80,7 +109,13 @@ export function ReviewActions({
         </button>
       </div>
       {msg ? (
-        <pre className="overflow-auto text-xs text-(--muted)">{msg}</pre>
+        <p
+          className={
+            error ? "text-sm text-(--danger)" : "text-sm text-(--muted)"
+          }
+        >
+          {msg}
+        </p>
       ) : null}
     </div>
   );

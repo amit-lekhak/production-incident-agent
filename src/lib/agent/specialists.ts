@@ -144,8 +144,10 @@ Gather evidence with tools.`,
 - n_plus_one / error_spike / pool_exhaustion → revert_pr with live deploy sha as action_target
 - payment_timeout → disable_flag with action_target=payments_v2 (revert_pr would be wrong)
 - if unsure → page_human or watch
-Cite tool display strings in evidence. Never invent metric series.
-Do not execute mutations — code will open a GitHub PR for revert_pr.`,
+Write summary as 1–2 plain sentences for an on-call engineer (what broke + what to do).
+Never paste tool display strings, similar-incident lists, metric series, or "catalog.lookup …" dumps into summary.
+Put tool quotes only in evidence[].display. Never invent metric series.
+Do not execute mutations — on approve, code opens/merges a GitHub PR for revert_pr.`,
     prompt: `Hypotheses:
 ${JSON.stringify(hypotheses, null, 2)}
 
@@ -155,7 +157,7 @@ ${evidencePack || "(none)"}
 Agent notes:
 ${gather.text || "(none)"}
 
-Output a recommendation with confidence.`,
+Output a recommendation with confidence and a plain-language summary.`,
   });
 
   if (!structured.output) {

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { langfuseTraceUrl } from "@/lib/observability/incident-events";
+import { eventKindLabel, statusLabel } from "@/lib/ui/labels";
+import { formatLocalTime, formatRelativeTime } from "@/lib/ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -72,18 +74,27 @@ export default async function OpsPage() {
             return (
               <div key={e.id} className="px-4 py-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="badge bg-(--line)">{e.kind}</span>
+                  <span className="badge bg-(--line)" title={e.kind}>
+                    {eventKindLabel(e.kind)}
+                  </span>
                   <Link
                     href={`/incidents/${e.incident_id}`}
                     className="text-(--accent)"
                   >
                     {e.title}
                   </Link>
-                  <span className="text-xs text-(--muted)">{e.status}</span>
+                  <span className="text-xs text-(--muted)">
+                    {statusLabel(e.status)}
+                  </span>
                 </div>
                 <div className="mt-1">{e.message}</div>
                 <div className="mt-1 flex gap-3 text-xs text-(--muted)">
-                  <span>{e.created_at}</span>
+                  <time
+                    dateTime={e.created_at}
+                    title={formatLocalTime(e.created_at)}
+                  >
+                    {formatRelativeTime(e.created_at)}
+                  </time>
                   {url ? (
                     <a
                       href={url}
