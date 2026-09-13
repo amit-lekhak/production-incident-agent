@@ -1,6 +1,11 @@
 import { sql } from "@/lib/db";
 import { getReleaseProvider } from "@/lib/release";
-import { statusLabel } from "@/lib/ui/labels";
+import {
+  formatMetricValue,
+  metricLabel,
+  operatorIncidentTitle,
+  statusLabel,
+} from "@/lib/ui/labels";
 import { formatLocalTime, formatOpenedAgo } from "@/lib/ui/time";
 
 export const dynamic = "force-dynamic";
@@ -23,9 +28,17 @@ async function loadOverview() {
   `;
 
   const incidents = await sql<
-    { id: string; title: string; status: string; opened_at: string }[]
+    {
+      id: string;
+      title: string;
+      status: string;
+      opened_at: string;
+      trigger_metric: string | null;
+      trigger_value: number | null;
+    }[]
   >`
-    SELECT id::text AS id, title, status, opened_at::text
+    SELECT id::text AS id, title, status, opened_at::text,
+           trigger_metric, trigger_value
     FROM incidents
     WHERE service_id = ${service.id} AND status NOT IN ('resolved', 'closed_rejected')
     ORDER BY opened_at DESC
@@ -102,13 +115,11 @@ export default async function HomePage() {
                   key={m.name}
                   className="rounded-lg border border-(--line) p-3"
                 >
-                  <div className="font-mono text-xs text-(--muted)">
-                    {m.name}
+                  <div className="text-xs text-(--muted)">
+                    {metricLabel(m.name)}
                   </div>
                   <div className="mt-1 text-xl font-semibold">
-                    {m.name.includes("rate")
-                      ? `${(m.value * 100).toFixed(2)}%`
-                      : `${Math.round(m.value)}${m.name.includes("latency") || m.name.includes("wait") ? "ms" : ""}`}
+                    {formatMetricValue(m.name, m.value)}
                   </div>
                 </div>
               ))}
@@ -130,7 +141,12 @@ export default async function HomePage() {
                       className="flex flex-col gap-1 rounded-lg border border-(--line) px-3 py-2 hover:border-(--accent) sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div>
-                        <div>{i.title}</div>
+                        <div>
+                          {operatorIncidentTitle(i.title, {
+                            metric: i.trigger_metric,
+                            value: i.trigger_value,
+                          })}
+                        </div>
                         <div
                           className="text-xs text-(--muted)"
                           title={formatLocalTime(i.opened_at)}

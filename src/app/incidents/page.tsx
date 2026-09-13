@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { actionLabel, statusLabel } from "@/lib/ui/labels";
+import {
+  actionLabel,
+  operatorIncidentTitle,
+  statusLabel,
+} from "@/lib/ui/labels";
 import { formatLocalTime, formatOpenedAgo } from "@/lib/ui/time";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +17,7 @@ export default async function IncidentsPage() {
       status: string;
       severity: string;
       trigger_metric: string | null;
+      trigger_value: number | null;
       opened_at: string;
       confidence: number | null;
       recommended_action: string | null;
@@ -24,6 +29,7 @@ export default async function IncidentsPage() {
       i.status,
       i.severity,
       i.trigger_metric,
+      i.trigger_value,
       i.opened_at::text,
       r.confidence,
       r.recommended_action
@@ -59,7 +65,12 @@ export default async function IncidentsPage() {
               className="flex flex-col gap-1 px-4 py-3 hover:bg-[#0f172a] sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
-                <div className="font-medium">{r.title}</div>
+                <div className="font-medium">
+                  {operatorIncidentTitle(r.title, {
+                    metric: r.trigger_metric,
+                    value: r.trigger_value,
+                  })}
+                </div>
                 <div
                   className="text-xs text-(--muted)"
                   title={formatLocalTime(r.opened_at)}

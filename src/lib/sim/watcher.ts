@@ -1,6 +1,10 @@
 import { appendIncidentEvent } from "@/lib/observability/incident-events";
 import { sql } from "@/lib/db";
-import { incidentTitleFromAlert } from "@/lib/ui/labels";
+import {
+  formatMetricValue,
+  incidentTitleFromAlert,
+  metricLabel,
+} from "@/lib/ui/labels";
 import { getServiceId } from "./faults";
 
 export type WatchResult =
@@ -112,7 +116,7 @@ export async function runWatcher(): Promise<WatchResult[]> {
     if (!fired) {
       results.push({
         opened: false,
-        reason: `${rule.metric} ok (${label} ${value} over ${windowSeconds}s, n=${samples.length})`,
+        reason: `${metricLabel(rule.metric)} ok (${label} ${formatMetricValue(rule.metric, value)} over ${windowSeconds}s, n=${samples.length})`,
       });
       continue;
     }
@@ -130,7 +134,7 @@ export async function runWatcher(): Promise<WatchResult[]> {
       await appendIncidentEvent({
         incidentId: existing.id,
         kind: "alert_repeat",
-        message: `Alert ${rule.name} still firing (${label} ${value})`,
+        message: `Still elevated — ${metricLabel(rule.metric)} ${label} ${formatMetricValue(rule.metric, value)} over ${windowSeconds}s`,
         meta: { metric: rule.metric, value, windowSeconds, label },
       });
       results.push({
@@ -218,7 +222,7 @@ export async function runWatcher(): Promise<WatchResult[]> {
     await appendIncidentEvent({
       incidentId: opened.id,
       kind: "detected",
-      message: `Watcher opened incident for ${rule.name}`,
+      message: `Opened after ${metricLabel(rule.metric)} hit ${formatMetricValue(rule.metric, value)} over ${windowSeconds}s`,
       meta: {
         metric: rule.metric,
         value,
@@ -264,7 +268,7 @@ function maybeAutoDiagnose(incidentId: string) {
       await appendIncidentEvent({
         incidentId,
         kind: "auto_diagnose",
-        message: "AUTO_DIAGNOSE starting diagnosis pipeline",
+        message: "Starting automatic diagnosis",
       });
       await runDiagnosisPipeline(incidentId);
     } catch (err) {

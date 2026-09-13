@@ -4,6 +4,7 @@ import {
   setIncidentStatus,
 } from "@/lib/observability/incident-events";
 import { sql } from "@/lib/db";
+import { formatMetricValue, metricLabel } from "@/lib/ui/labels";
 
 const LATENCY = Number(process.env.LATENCY_P95_THRESHOLD_MS ?? 2000);
 const ERROR_RATE = Number(process.env.ERROR_RATE_THRESHOLD ?? 0.05);
@@ -43,7 +44,8 @@ export async function verifyRecovery(incidentId: string) {
   await appendIncidentEvent({
     incidentId,
     kind: "verifying",
-    message: `Sampling ${triggerMetric} after action (samples=${samples}, threshold=${threshold}, timeout=${timeoutMs}ms)`,
+    message: `Checking ${metricLabel(triggerMetric)} after the fix (need ${samples} samples under ${formatMetricValue(triggerMetric, threshold)})`,
+    meta: { metric: triggerMetric, threshold, samples, timeoutMs },
   });
 
   const readings: Array<{
@@ -93,8 +95,13 @@ export async function verifyRecovery(incidentId: string) {
     await appendIncidentEvent({
       incidentId,
       kind: "verify_ok",
-      message: `${triggerMetric}=${Math.round(last.trigger * 1000) / 1000} recovered (threshold ${threshold})`,
-      meta: { readings, triggerMetric, threshold },
+      message: `Recovered — ${metricLabel(triggerMetric)} is ${formatMetricValue(triggerMetric, last.trigger)} (threshold ${formatMetricValue(triggerMetric, threshold)})`,
+      meta: {
+        readings,
+        metric: triggerMetric,
+        value: last.trigger,
+        threshold,
+      },
     });
     return { ok: true as const, recovered: true, readings };
   }
@@ -107,8 +114,14 @@ export async function verifyRecovery(incidentId: string) {
   await appendIncidentEvent({
     incidentId,
     kind: "verify_failed",
-    message: `${triggerMetric}=${Math.round(last.trigger * 1000) / 1000} (threshold ${threshold})`,
-    meta: { readings, worse, triggerMetric, threshold },
+    message: `Not recovered — ${metricLabel(triggerMetric)} is ${formatMetricValue(triggerMetric, last.trigger)} (threshold ${formatMetricValue(triggerMetric, threshold)})`,
+    meta: {
+      readings,
+      worse,
+      metric: triggerMetric,
+      value: last.trigger,
+      threshold,
+    },
   });
   return { ok: false as const, recovered: false, readings, worse };
 }

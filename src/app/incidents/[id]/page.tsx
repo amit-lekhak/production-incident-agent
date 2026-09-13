@@ -10,6 +10,8 @@ import {
   eventKindLabel,
   looksLikeDump,
   nextStepHint,
+  operatorEventMessage,
+  operatorIncidentTitle,
   operatorSummary,
   shortSha,
   statusLabel,
@@ -49,9 +51,14 @@ export default async function IncidentDetailPage({
   if (!incident) notFound();
 
   const events = await sql<
-    { kind: string; message: string; created_at: string }[]
+    {
+      kind: string;
+      message: string;
+      meta: Record<string, unknown>;
+      created_at: string;
+    }[]
   >`
-    SELECT kind, message, created_at::text
+    SELECT kind, message, meta, created_at::text
     FROM incident_events WHERE incident_id = ${id}::uuid
     ORDER BY created_at ASC
   `;
@@ -116,7 +123,12 @@ export default async function IncidentDetailPage({
           <Link href="/incidents" className="text-xs text-(--muted)">
             ← Incidents
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold">{incident.title}</h1>
+          <h1 className="mt-1 text-2xl font-semibold">
+            {operatorIncidentTitle(incident.title, {
+              metric: incident.trigger_metric,
+              value: incident.trigger_value,
+            })}
+          </h1>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-(--muted)">
             <time
               dateTime={incident.opened_at}
@@ -229,7 +241,13 @@ export default async function IncidentDetailPage({
                     {formatRelativeTime(e.created_at)}
                   </time>
                 </div>
-                <div>{e.message}</div>
+                <div>
+                  {operatorEventMessage({
+                    kind: e.kind,
+                    message: e.message,
+                    meta: e.meta,
+                  })}
+                </div>
               </li>
             ))}
           </ul>
@@ -305,7 +323,7 @@ export default async function IncidentDetailPage({
             {similar.map((s) => (
               <li key={s.id}>
                 <Link href={`/incidents/${s.id}`} className="text-(--accent)">
-                  {s.title}
+                  {operatorIncidentTitle(s.title)}
                 </Link>
                 <span className="ml-2 text-xs text-(--muted)">
                   {statusLabel(s.status)}

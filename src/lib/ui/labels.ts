@@ -191,8 +191,27 @@ export function nextStepHint(input: {
   return "Open the incident for details.";
 }
 
+const METRIC_LABELS: Record<string, string> = {
+  checkout_latency_p95: "Checkout latency",
+  payments_latency_p99: "Payments latency",
+  checkout_error_rate: "Checkout error rate",
+  db_pool_wait_ms: "DB pool wait",
+};
+
+/** Friendly metric name for operators (never dump raw snake_case as primary copy). */
+export function metricLabel(metric: string | null | undefined): string {
+  if (!metric) return "Metric";
+  if (METRIC_LABELS[metric]) return METRIC_LABELS[metric];
+  return metric
+    .replace(/_p95$/i, "")
+    .replace(/_p99$/i, "")
+    .replace(/_ms$/i, "")
+    .replaceAll("_", " ");
+}
+
 /** Format a metric sample for titles (rates as %, latency as seconds or ms). */
 export function formatMetricValue(metric: string, value: number): string {
+  if (!Number.isFinite(value)) return "—";
   if (metric.includes("rate")) {
     return `${(value * 100).toFixed(1)}%`;
   }
@@ -201,6 +220,14 @@ export function formatMetricValue(metric: string, value: number): string {
     return `${Math.round(value)}ms`;
   }
   return `${Math.round(value * 1000) / 1000}`;
+}
+
+function formatWindow(seconds: number): string {
+  if (seconds >= 60 && seconds % 60 === 0) {
+    const m = seconds / 60;
+    return m === 1 ? "1 minute" : `${m} minutes`;
+  }
+  return `${seconds}s`;
 }
 
 /** Human incident title from an alert rule firing. */
@@ -212,6 +239,170 @@ export function incidentTitleFromAlert(input: {
   aggLabel: string;
 }): string {
   const pretty = formatMetricValue(input.metric, input.value);
-  const base = input.ruleName.replace(/\s+p95$/i, "").trim() || input.ruleName;
-  return `${base} elevated (${input.aggLabel} ${pretty} over ${input.windowSeconds}s)`;
+  const base =
+    input.ruleName.replace(/\s+p95$/i, "").trim() || metricLabel(input.metric);
+  return `${base} elevated (${input.aggLabel} ${pretty} over ${formatWindow(input.windowSeconds)})`;
+}
+
+/**
+ * Rewrite stored titles that look like alert dumps, e.g.
+ * `DB pool wait: db_pool_wait_ms > 500 (avg 847.127 over 60s)`.
+ */
+export function operatorIncidentTitle(
+  title: string | null | undefined,
+  opts?: { metric?: string | null; value?: number | null },
+): string {
+  const raw = title?.trim() ?? "";
+  if (!raw) return "Untitled incident";
+
+  const dump = raw.match(
+    /^(.+?):\s*([a-z0-9_]+)\s*(>=|>)\s*([\d.]+)\s*\((avg|p95|p99)\s+([\d.]+)\s+over\s+(\d+)s\)$/i,
+  );
+  if (dump) {
+    const ruleName = dump[1]!.trim();
+    const metric = dump[2]!;
+    const aggLabel = dump[5]!.toLowerCase();
+    const value = Number(dump[6]);
+    const windowSeconds = Number(dump[7]);
+    return incidentTitleFromAlert({
+      ruleName,
+      metric,
+      value,
+      windowSeconds,
+      aggLabel,
+    });
+  }
+
+  if (opts?.metric && opts.value != null && /[a-z0-9_]+ > [\d.]+/i.test(raw)) {
+    return incidentTitleFromAlert({
+      ruleName: metricLabel(opts.metric),
+      metric: opts.metric,
+      value: opts.value,
+      windowSeconds: 60,
+      aggLabel: opts.metric.includes("rate") ? "avg" : "p95",
+    });
+  }
+
+  return raw;
+}
+
+/** Operator-facing event message; never leave raw metric dumps as the body. */
+export function operatorEventMessage(input: {
+  kind: string;
+  message: string;
+  meta?: Record<string, unknown> | null;
+}): string {
+  const kind = input.kind;
+  const message = input.message?.trim() ?? "";
+  const meta = input.meta ?? {};
+
+  const metric =
+    typeof meta.metric === "string"
+      ? meta.metric
+      : typeof meta.triggerMetric === "string"
+        ? meta.triggerMetric
+        : null;
+  const value =
+    typeof meta.value === "number"
+      ? meta.value
+      : typeof meta.value === "string"
+        ? Number(meta.value)
+        : null;
+  const label =
+    typeof meta.label === "string"
+      ? meta.label
+      : metric?.includes("rate")
+        ? "avg"
+        : "p95";
+  const windowSeconds =
+    typeof meta.windowSeconds === "number" ? meta.windowSeconds : null;
+
+  if (kind === "alert_repeat") {
+    if (metric && value != null && Number.isFinite(value)) {
+      return `Still elevated — ${metricLabel(metric)} ${label} ${formatMetricValue(metric, value)}${
+        windowSeconds ? ` over ${formatWindow(windowSeconds)}` : ""
+      }.`;
+    }
+    const m = message.match(
+      /Alert\s+(.+?)\s+still firing\s*\((avg|p95|p99)\s+([\d.]+)\)/i,
+    );
+    if (m) {
+      const name = m[1]!.trim();
+      const agg = m[2]!.toLowerCase();
+      const n = Number(m[3]);
+      const guessMetric = /pool/i.test(name)
+        ? "db_pool_wait_ms"
+        : /error/i.test(name)
+          ? "checkout_error_rate"
+          : /payment/i.test(name)
+            ? "payments_latency_p99"
+            : "checkout_latency_p95";
+      return `Still elevated — ${name} ${agg} ${formatMetricValue(guessMetric, n)}.`;
+    }
+  }
+
+  if (kind === "detected") {
+    if (metric && value != null && Number.isFinite(value)) {
+      return `Opened after ${metricLabel(metric)} hit ${formatMetricValue(metric, value)}${
+        windowSeconds ? ` over ${formatWindow(windowSeconds)}` : ""
+      }.`;
+    }
+    const opened = message.match(/Watcher opened incident for\s+(.+)/i);
+    if (opened) return `Alert fired: ${opened[1]!.trim()}.`;
+  }
+
+  if (kind === "awaiting_review") {
+    const rec = message.match(/Recommendation:\s+(\w+)\s+(\S+)\s+\((\d+)%\)/i);
+    if (rec) {
+      const action = rec[1]!;
+      const target = rec[2]!;
+      const confidence = rec[3]!;
+      const targetBit = actionTargetLabel(action, target);
+      return `Recommended ${actionLabel(action)}${
+        targetBit ? ` → ${targetBit}` : ""
+      } (${confidence}% confidence).`;
+    }
+  }
+
+  if (
+    kind === "verifying" ||
+    kind === "verify_ok" ||
+    kind === "verify_failed"
+  ) {
+    const sample = message.match(
+      /^([a-z0-9_]+)=([\d.]+)\s*(recovered)?\s*\(threshold\s+([\d.]+)\)/i,
+    );
+    if (sample) {
+      const m = sample[1]!;
+      const v = Number(sample[2]);
+      const recovered = Boolean(sample[3]);
+      const thr = Number(sample[4]);
+      const body = `${metricLabel(m)} is ${formatMetricValue(m, v)} (threshold ${formatMetricValue(m, thr)})`;
+      if (kind === "verify_ok" || recovered) return `Recovered — ${body}.`;
+      if (kind === "verify_failed") return `Not recovered — ${body}.`;
+      return `Checking — ${body}.`;
+    }
+  }
+
+  if (kind === "acting") {
+    const act = message.match(/Executing\s+(\w+)\s*→\s*(\S+)/i);
+    if (act) {
+      const action = act[1]!;
+      const target = act[2]!;
+      const targetBit = actionTargetLabel(action, target);
+      return `Applying ${actionLabel(action)}${
+        targetBit ? ` (${targetBit})` : ""
+      }.`;
+    }
+  }
+
+  if (kind === "auto_diagnose") {
+    return "Starting automatic diagnosis.";
+  }
+
+  if (looksLikeDump(message)) {
+    return eventKindLabel(kind);
+  }
+
+  return message || eventKindLabel(kind);
 }

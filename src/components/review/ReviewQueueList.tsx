@@ -7,6 +7,7 @@ import {
   looksLikeDump,
   nextStepHint,
   operatorSummary,
+  operatorIncidentTitle,
   statusLabel,
 } from "@/lib/ui/labels";
 import { formatLocalTime, formatOpenedAgo } from "@/lib/ui/time";
@@ -53,7 +54,7 @@ export function ReviewQueueList({
                 href={`/incidents/${row.incident_id}`}
                 className="font-medium text-(--accent)"
               >
-                {row.title}
+                {operatorIncidentTitle(row.title)}
               </Link>
               <div className="mt-1 text-xs text-(--muted)">
                 <time

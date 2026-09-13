@@ -4,6 +4,7 @@ import {
   setIncidentStatus,
 } from "@/lib/observability/incident-events";
 import { currentTraceId, flushTelemetry } from "@/lib/observability/langfuse";
+import { actionLabel, actionTargetLabel } from "@/lib/ui/labels";
 import {
   classifyProviderError,
   isHardFailCode,
@@ -338,12 +339,23 @@ export async function runDiagnosisPipeline(
     }
   }
 
+  const targetBit = actionTargetLabel(
+    recommendation.recommended_action,
+    recommendation.action_target,
+  );
   await setIncidentStatus(incidentId, "awaiting_review");
   await appendIncidentEvent({
     incidentId,
     kind: "awaiting_review",
-    message: `Recommendation: ${recommendation.recommended_action} ${recommendation.action_target} (${recommendation.confidence_0_100}%)`,
-    meta: { recommendationId: recId },
+    message: `Recommended ${actionLabel(recommendation.recommended_action)}${
+      targetBit ? ` → ${targetBit}` : ""
+    } (${recommendation.confidence_0_100}% confidence)`,
+    meta: {
+      recommendationId: recId,
+      action: recommendation.recommended_action,
+      target: recommendation.action_target,
+      confidence: recommendation.confidence_0_100,
+    },
   });
 
   return {
