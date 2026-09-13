@@ -1,9 +1,10 @@
 /**
- * BUG: per-item enrichment — sequential N+1 catalog lookups.
- * Chaos scenario: n_plus_one
+ * BUG: payments_v2 routes through a slow dependency.
+ * When the host disables payments_v2, checkout falls back to the fast path
+ * without requiring a redeploy.
  */
-import { lookupProductNPlusOne } from "./catalog";
-import { chargePayment } from "./payments";
+import { lookupProduct } from "./catalog";
+import { chargePayment, chargePaymentSlow } from "./payments";
 import { DB_POOL_SIZE } from "./pool";
 
 export type CheckoutItem = { productId: string; qty: number };
@@ -18,21 +19,25 @@ export type CheckoutRequest = {
 export async function checkout(req: CheckoutRequest) {
   const source = req.meta?.source ?? "web";
   void DB_POOL_SIZE;
-  void req.flags;
 
-  // N+1: one slow catalog round-trip per line item (cart size × ~700ms).
-  const products = [];
-  for (const item of req.items) {
-    products.push(await lookupProductNPlusOne(item.productId));
-  }
+  const products = await Promise.all(
+    req.items.map((i) => lookupProduct(i.productId)),
+  );
   const total = products.reduce(
     (sum, p, idx) => sum + p.priceCents * req.items[idx]!.qty,
     0,
   );
-  const payment = await chargePayment({
-    amountCents: total,
-    method: req.paymentMethod,
-  });
+  // Flag defaults on for this deploy (chaos enables payments_v2).
+  const useV2 = req.flags?.payments_v2 !== false;
+  const payment = useV2
+    ? await chargePaymentSlow({
+        amountCents: total,
+        method: req.paymentMethod,
+      })
+    : await chargePayment({
+        amountCents: total,
+        method: req.paymentMethod,
+      });
   return {
     orderId: `ord_${req.cartId}`,
     totalCents: total,
