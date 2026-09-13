@@ -54,12 +54,10 @@ export default async function HomePage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Production overview
-        </h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
         <p className="mt-1 text-sm text-(--muted)">
-          Simulated Relay Checkout world. Inject faults from Chaos, then watch
-          incidents open.
+          Live health for Relay Checkout — metrics, open incidents, and the
+          current production deploy.
         </p>
       </header>
 
@@ -84,9 +82,7 @@ export default async function HomePage() {
               <div className="mt-1 font-mono text-sm text-(--accent)">
                 {deploy?.sha ?? "—"}
               </div>
-              <div className="text-xs text-(--muted)">
-                {deploy?.version}
-              </div>
+              <div className="text-xs text-(--muted)">{deploy?.version}</div>
             </div>
             <div className="panel p-4">
               <div className="text-xs uppercase tracking-wide text-(--muted)">

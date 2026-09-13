@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Relay · Incident Agent",
+  title: "Relay Incident",
   description:
-    "AI production incident response over a simulated checkout service",
+    "Detect, diagnose, and remediate Relay Checkout production incidents with human-gated actions",
 };
 
 export default function RootLayout({

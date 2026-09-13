@@ -41,9 +41,8 @@ export default async function OpsPage() {
       <header>
         <h1 className="text-2xl font-semibold">Ops</h1>
         <p className="mt-1 text-sm text-(--muted)">
-          Operator timeline from{" "}
-          <code className="font-mono">incident_events</code>. LLM/tool
-          waterfalls live in Langfuse when configured — not a homemade APM.
+          Operator event stream across incidents. LLM tool traces show in
+          Langfuse when keys are set.
         </p>
       </header>
 
@@ -51,9 +50,7 @@ export default async function OpsPage() {
         <div>
           Langfuse:{" "}
           <span
-            className={
-              langfuseConfigured ? "text-(--ok)" : "text-(--warn)"
-            }
+            className={langfuseConfigured ? "text-(--ok)" : "text-(--warn)"}
           >
             {langfuseConfigured
               ? "configured"
@@ -68,9 +65,7 @@ export default async function OpsPage() {
 
       <div className="panel divide-y divide-(--line)">
         {events.length === 0 ? (
-          <p className="p-4 text-sm text-(--muted)">
-            No pipeline events yet.
-          </p>
+          <p className="p-4 text-sm text-(--muted)">No pipeline events yet.</p>
         ) : (
           events.map((e) => {
             const url = langfuseTraceUrl(e.langfuse_trace_id);
@@ -84,9 +79,7 @@ export default async function OpsPage() {
                   >
                     {e.title}
                   </Link>
-                  <span className="text-xs text-(--muted)">
-                    {e.status}
-                  </span>
+                  <span className="text-xs text-(--muted)">{e.status}</span>
                 </div>
                 <div className="mt-1">{e.message}</div>
                 <div className="mt-1 flex gap-3 text-xs text-(--muted)">

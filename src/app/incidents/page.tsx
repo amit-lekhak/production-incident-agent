@@ -42,7 +42,8 @@ export default async function IncidentsPage() {
       <header>
         <h1 className="text-2xl font-semibold">Incidents</h1>
         <p className="mt-1 text-sm text-(--muted)">
-          Opened by the watcher when alert rules fire against live metrics.
+          Active and recent incidents. Diagnose here if auto-diagnose is off, or
+          open a case for the timeline and evidence.
         </p>
       </header>
       <div className="panel divide-y divide-(--line)">

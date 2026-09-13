@@ -42,10 +42,10 @@ export default async function ReviewPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold">Review queue</h1>
+        <h1 className="text-2xl font-semibold">Review</h1>
         <p className="mt-1 text-sm text-(--muted)">
-          Approve merges the remediation PR and redeploys. The LLM never mutates
-          git.
+          Human gate for remediations — approve to merge the PR and redeploy, or
+          reject / request more evidence. The model never writes to git.
         </p>
       </header>
 
@@ -74,9 +74,7 @@ export default async function ReviewPage() {
                       {row.confidence}%
                     </span>
                   </div>
-                  <p className="mt-2 text-sm text-(--muted)">
-                    {row.summary}
-                  </p>
+                  <p className="mt-2 text-sm text-(--muted)">{row.summary}</p>
                   {row.pr_url ? (
                     <p className="mt-2 text-sm">
                       <a
