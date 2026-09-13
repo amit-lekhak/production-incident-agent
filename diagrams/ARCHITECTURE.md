@@ -115,14 +115,12 @@ flowchart TD
   subgraph platform [Platform packages]
     AISDK["AI SDK telemetry"]
     Langfuse[Langfuse optional]
-    Sentry["Sentry optional"]
   end
 
   Checkout["/sim/checkout"] --> SimTraces
   Pipeline[Pipeline] --> Timeline
   Agents[Gemini agents] --> AISDK
   AISDK --> Langfuse
-  NextApp[Next.js crashes] --> Sentry
 ```
 
 ## 4. Code graph scope

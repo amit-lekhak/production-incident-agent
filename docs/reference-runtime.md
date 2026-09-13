@@ -2,12 +2,19 @@
 
 ## HTTP
 
-| Method   | Path                      | Purpose                                                       |
-| -------- | ------------------------- | ------------------------------------------------------------- |
-| GET/POST | `/sim/checkout`           | Simulated checkout (fault-aware)                              |
-| GET/POST | `/api/chaos`              | List scenarios / inject / clear / tick / watch                |
-| POST     | `/api/incidents/diagnose` | `{ incidentId, forceOracle? }`                                |
-| POST     | `/api/reviews`            | `{ incidentId, decision: approved\|rejected\|more_evidence }` |
+| Method   | Path                      | Purpose                                                     |
+| -------- | ------------------------- | ----------------------------------------------------------- |
+| GET      | `/api/health`             | Postgres + ticker/watcher/Gemini/Langfuse status            |
+| GET/POST | `/sim/checkout`           | Simulated checkout (fault-aware)                            |
+| GET/POST | `/api/chaos`              | List scenarios / inject / clear / tick / watch              |
+| POST     | `/api/incidents/diagnose` | `{ incidentId, forceOracle? }` — only from allowed statuses |
+| POST     | `/api/reviews`            | `{ incidentId, decision }` — claims pending review once     |
+
+## Status machine
+
+`detected` → `investigating` → `awaiting_review` → `acting` → `verifying` → `resolved`
+
+Also: `needs_human`, `closed_rejected`. Diagnose CAS only from `detected` | `needs_human` | `awaiting_review`. Review requires `awaiting_review` and a pending review row.
 
 ## Tools (read-only)
 
@@ -15,4 +22,4 @@
 
 ## Env
 
-See `.env.example`. Langfuse and Sentry are optional. `GEMINI_API_KEY` enables live specialists; otherwise the oracle path runs.
+See `.env.example`. `DATABASE_URL` is required. Langfuse is optional. `GEMINI_API_KEY` enables live specialists; otherwise the oracle path runs. Watcher/ticker/verify knobs and `METRIC_RETENTION_HOURS` are validated via Zod in `src/lib/env.ts`.

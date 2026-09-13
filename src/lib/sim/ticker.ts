@@ -43,6 +43,15 @@ export async function tickOnce() {
       (${serviceId}, 'payments_latency_p99', ${paymentsP99}, ${jsonb({ dependency: "payments" })}, ${at}::timestamptz)
   `;
 
+  const retentionHours = Number(process.env.METRIC_RETENTION_HOURS ?? 6);
+  if (retentionHours > 0) {
+    await sql`
+      DELETE FROM metric_samples
+      WHERE service_id = ${serviceId}
+        AND sampled_at < NOW() - make_interval(hours => ${retentionHours})
+    `.catch(() => undefined);
+  }
+
   return {
     p95,
     errorRate,

@@ -4,42 +4,46 @@ AI production incident response over a **simulated** checkout service (Relay Che
 
 This is **not** a chatbot and does not talk to real Kubernetes / Prometheus / Grafana / Jira.
 
+**Local demo risk:** APIs are unauthenticated. Anyone who can reach the process can inject faults, spend Gemini tokens, and approve rollbacks.
+
 ## Prerequisites
 
 - Node 20+ and pnpm
 - Postgres 14+
-- Optional: `GEMINI_API_KEY`, Langfuse keys, Sentry DSN
+- Optional: `GEMINI_API_KEY`, Langfuse keys
 
 ## Setup
 
 ```bash
 cd production_incident_agent
 cp .env.example .env.local
-# set DATABASE_URL (default postgres://localhost:5432/relay_incident)
+# set DATABASE_URL (required)
 createdb relay_incident   # if needed
 pnpm install
-pnpm db:push
+pnpm db:migrate   # or pnpm db:push on an existing DB
 pnpm db:seed
 pnpm dev
 ```
 
-Open http://localhost:3000
+Open http://localhost:3000 — ticker/watcher start on boot. Check `GET /api/health`.
 
 ## Demo loop
 
 1. **/chaos** — inject `n_plus_one` (or other scenarios)
 2. Hit **/sim/checkout** or wait for the ticker — latency rises
-3. Watcher opens an incident when p95 > 2s
+3. Watcher opens an incident when windowed p95 > 2s
 4. Incident + Evidence agents propose a recommendation
 5. **/review** — approve / reject / request more evidence
 6. On approve, code rolls back (LLM never mutates), verifier checks metrics, postmortem is written
 
 ## Scripts
 
-- `pnpm db:push` / `pnpm db:seed` — schema + seed world (includes a historical N+1 twin)
+- `pnpm db:migrate` / `pnpm db:push` / `pnpm db:seed` — schema + seed world
 - `pnpm graph:rebuild` — rebuild Graphify `graph.json` for the Relay fixture
-- `pnpm eval` — oracle + agent evals
+- `pnpm eval` — oracle + live Gemini agent evals (**requires `GEMINI_API_KEY`**)
+- `pnpm eval:oracle` — deterministic oracle only
 - `pnpm test` — unit tests
+- `pnpm smoke:loop` / `smoke:diagnose` / `smoke:chaos` — end-to-end CLI checks
 
 ## Docs
 

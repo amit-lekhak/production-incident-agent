@@ -19,3 +19,7 @@ Homemade span tables duplicate what OTel + Langfuse already do. Product UX still
 ## Why Graphify on a fixture, not this repo
 
 Dumping the Next.js app (with `node_modules` and lockfiles) wastes tokens and confuses “production code” with the console. Agents query a checked-in graph of `fixtures/relay-checkout` under a hard token budget.
+
+## Why this stays an open local demo
+
+No login by design. Chaos, diagnose, and review stay reachable on localhost so the loop is easy to dogfood. Treat network exposure as unsafe.
