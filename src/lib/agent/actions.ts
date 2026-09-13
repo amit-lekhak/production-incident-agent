@@ -47,50 +47,58 @@ export async function executeApprovedAction(incidentId: string) {
         WHERE service_id = ${incident.service_id} AND status = 'active'
         ORDER BY deployed_at DESC LIMIT 1
       `;
-      await sql`
-        UPDATE deployments
-        SET status = 'rolled_back', rolled_back_at = NOW()
-        WHERE service_id = ${incident.service_id} AND status = 'active'
-      `;
-      // restore previous stable deploy if present
+      if (!current) {
+        throw new Error("No active deployment to roll back");
+      }
+      if (rec.action_target !== current.sha) {
+        throw new Error(
+          `action_target ${rec.action_target} does not match active deploy ${current.sha}`,
+        );
+      }
+
       const [prev] = await sql<{ sha: string }[]>`
         SELECT sha FROM deployments
         WHERE service_id = ${incident.service_id}
-          AND sha <> ${rec.action_target}
+          AND sha <> ${current.sha}
+          AND status <> 'active'
         ORDER BY deployed_at DESC
         LIMIT 1
       `;
-      const restoreSha = prev?.sha ?? "aaa111stable";
+
       await sql`
         UPDATE deployments
-        SET status = 'active', rolled_back_at = NULL, deployed_at = NOW()
-        WHERE service_id = ${incident.service_id} AND sha = ${restoreSha}
+        SET status = 'rolled_back', rolled_back_at = NOW()
+        WHERE service_id = ${incident.service_id} AND sha = ${current.sha}
       `;
-      // if restore row missing, insert
-      const [active] = await sql<{ sha: string }[]>`
-        SELECT sha FROM deployments
-        WHERE service_id = ${incident.service_id} AND status = 'active'
-        LIMIT 1
-      `;
-      if (!active) {
+
+      let restoreSha = prev?.sha;
+      if (restoreSha) {
+        await sql`
+          UPDATE deployments
+          SET status = 'active', rolled_back_at = NULL, deployed_at = NOW()
+          WHERE service_id = ${incident.service_id} AND sha = ${restoreSha}
+        `;
+      } else {
+        // last-resort seed fallback when history is missing
+        restoreSha = "aaa111stable";
         await sql`
           INSERT INTO deployments (service_id, sha, version, status, summary, deployed_at)
           VALUES (
             ${incident.service_id}, 'aaa111stable', 'v1.4.2', 'active',
-            'Restored after rollback', NOW()
+            'Restored after rollback (seed fallback)', NOW()
           )
-          ON CONFLICT (sha) DO UPDATE SET status = 'active', deployed_at = NOW()
+          ON CONFLICT (sha) DO UPDATE SET status = 'active', deployed_at = NOW(), rolled_back_at = NULL
         `;
       }
+
       await clearFaults();
-      result = { previousSha: current?.sha, restoredSha: restoreSha };
+      result = { previousSha: current.sha, restoredSha: restoreSha };
     } else if (rec.recommended_action === "disable_flag") {
       await sql`
         UPDATE feature_flags
         SET enabled = false
         WHERE service_id = ${incident.service_id} AND key = ${rec.action_target}
       `;
-      // clear payment_timeout fault behavior by clearing faults if matching
       await clearFaults();
       result = { flag: rec.action_target, enabled: false };
     } else if (rec.recommended_action === "restart") {
