@@ -41,3 +41,6 @@
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Materialized deploy worktrees (services/relay-checkout @ SHA)
+.relay-worktrees/
