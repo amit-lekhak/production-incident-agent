@@ -1,8 +1,8 @@
 /**
- * BUG: per-item enrichment — sequential N+1 catalog lookups.
- * Chaos scenario: n_plus_one
+ * Relay Checkout — the production TypeScript service under incident response.
+ * Live at the GitHub-deployed SHA. Edit here to introduce bugs and real history.
  */
-import { lookupProductNPlusOne } from "./catalog";
+import { lookupProduct } from "./catalog";
 import { chargePayment } from "./payments";
 import { DB_POOL_SIZE } from "./pool";
 
@@ -12,19 +12,19 @@ export type CheckoutRequest = {
   items: CheckoutItem[];
   paymentMethod: string;
   meta?: { source?: string } | null;
-  flags?: { payments_v2?: boolean };
 };
 
 export async function checkout(req: CheckoutRequest) {
+  // Guard empty cart metadata (historical null-deref fix).
   const source = req.meta?.source ?? "web";
-  void DB_POOL_SIZE;
-  void req.flags;
 
-  // N+1: one slow catalog round-trip per line item (cart size × ~700ms).
-  const products = [];
-  for (const item of req.items) {
-    products.push(await lookupProductNPlusOne(item.productId));
-  }
+  // Healthy path: parallel catalog lookups, then payment.
+  // Pool size is config-only here; runtime sim uses this constant for wait modeling.
+  void DB_POOL_SIZE;
+
+  const products = await Promise.all(
+    req.items.map((i) => lookupProduct(i.productId)),
+  );
   const total = products.reduce(
     (sum, p, idx) => sum + p.priceCents * req.items[idx]!.qty,
     0,
