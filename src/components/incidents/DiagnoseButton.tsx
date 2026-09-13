@@ -34,7 +34,7 @@ export function DiagnoseButton({ incidentId }: { incidentId: string }) {
           type="button"
           disabled={busy}
           onClick={() => void run(false)}
-          className="rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-[#0b1220] disabled:opacity-50"
+          className="rounded-lg bg-(--accent) px-3 py-2 text-sm font-semibold text-[#0b1220] disabled:opacity-50"
         >
           {busy ? "Diagnosing…" : "Run diagnose"}
         </button>
@@ -42,13 +42,13 @@ export function DiagnoseButton({ incidentId }: { incidentId: string }) {
           type="button"
           disabled={busy}
           onClick={() => void run(true)}
-          className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm disabled:opacity-50"
+          className="rounded-lg border border-(--line) px-3 py-2 text-sm disabled:opacity-50"
         >
           Oracle
         </button>
       </div>
       {error ? (
-        <div className="text-xs text-[var(--danger)]">{error}</div>
+        <div className="text-xs text-(--danger)">{error}</div>
       ) : null}
     </div>
   );

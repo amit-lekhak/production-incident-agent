@@ -81,15 +81,15 @@ export default async function IncidentDetailPage({
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href="/incidents" className="text-xs text-[var(--muted)]">
+          <Link href="/incidents" className="text-xs text-(--muted)">
             ← Incidents
           </Link>
           <h1 className="mt-1 text-2xl font-semibold">{incident.title}</h1>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            <span className="badge bg-[var(--line)]">{incident.status}</span>
-            <span className="badge bg-[var(--line)]">{incident.severity}</span>
+            <span className="badge bg-(--line)">{incident.status}</span>
+            <span className="badge bg-(--line)">{incident.severity}</span>
             {incident.suspect_deploy_sha ? (
-              <span className="badge bg-[#0c4a6e] font-mono text-[var(--accent)]">
+              <span className="badge bg-[#0c4a6e] font-mono text-(--accent)">
                 {incident.suspect_deploy_sha}
               </span>
             ) : null}
@@ -99,7 +99,7 @@ export default async function IncidentDetailPage({
       </header>
 
       {incident.needs_human_reason ? (
-        <div className="panel border-[var(--danger)] p-4 text-sm text-[var(--danger)]">
+        <div className="panel border-(--danger) p-4 text-sm text-(--danger)">
           Needs human: {incident.needs_human_reason}
         </div>
       ) : null}
@@ -107,7 +107,7 @@ export default async function IncidentDetailPage({
       {traceUrl ? (
         <a
           href={traceUrl}
-          className="text-sm text-[var(--accent)]"
+          className="text-sm text-(--accent)"
           target="_blank"
           rel="noreferrer"
         >
@@ -122,9 +122,9 @@ export default async function IncidentDetailPage({
             {events.map((e, i) => (
               <li
                 key={`${e.created_at}-${i}`}
-                className="border-l border-[var(--line)] pl-3"
+                className="border-l border-(--line) pl-3"
               >
-                <div className="text-xs text-[var(--muted)]">
+                <div className="text-xs text-(--muted)">
                   {e.kind} · {e.created_at}
                 </div>
                 <div>{e.message}</div>
@@ -136,7 +136,7 @@ export default async function IncidentDetailPage({
         <div className="panel p-4">
           <h2 className="mb-2 text-sm font-semibold">Hypotheses</h2>
           {hypotheses.length === 0 ? (
-            <p className="text-sm text-[var(--muted)]">
+            <p className="text-sm text-(--muted)">
               Run diagnose to gather hypotheses.
             </p>
           ) : (
@@ -144,18 +144,18 @@ export default async function IncidentDetailPage({
               {hypotheses.map((h) => (
                 <li
                   key={h.rank}
-                  className="rounded-lg border border-[var(--line)] p-3"
+                  className="rounded-lg border border-(--line) p-3"
                 >
                   <div className="font-medium">
                     #{h.rank} {h.cause_type}
                     {h.suspect_deploy ? (
-                      <span className="ml-2 font-mono text-xs text-[var(--accent)]">
+                      <span className="ml-2 font-mono text-xs text-(--accent)">
                         {h.suspect_deploy}
                       </span>
                     ) : null}
                   </div>
-                  <div className="mt-1 text-[var(--muted)]">{h.why}</div>
-                  <div className="mt-1 text-xs text-[var(--muted)]">
+                  <div className="mt-1 text-(--muted)">{h.why}</div>
+                  <div className="mt-1 text-xs text-(--muted)">
                     tools: {(h.supporting_tool_names ?? []).join(", ")}
                   </div>
                 </li>
@@ -168,19 +168,19 @@ export default async function IncidentDetailPage({
       <section className="panel p-4">
         <h2 className="mb-2 text-sm font-semibold">Recommendation</h2>
         {!rec ? (
-          <p className="text-sm text-[var(--muted)]">Pending evidence agent.</p>
+          <p className="text-sm text-(--muted)">Pending evidence agent.</p>
         ) : (
           <div className="space-y-2 text-sm">
             <div>
-              <span className="badge bg-[#0c4a6e] text-[var(--accent)]">
+              <span className="badge bg-[#0c4a6e] text-(--accent)">
                 {rec.recommended_action} → {rec.action_target}
               </span>
-              <span className="ml-2 badge bg-[var(--line)]">
+              <span className="ml-2 badge bg-(--line)">
                 {rec.confidence}% confidence
               </span>
             </div>
             <p>{rec.summary}</p>
-            <ul className="space-y-1 text-xs text-[var(--muted)]">
+            <ul className="space-y-1 text-xs text-(--muted)">
               {(rec.evidence ?? []).map((e, i) => (
                 <li key={i}>
                   [{e.supports ? "supports" : "against"}] {e.tool}: {e.display}
@@ -190,7 +190,7 @@ export default async function IncidentDetailPage({
             {incident.status === "awaiting_review" ? (
               <Link
                 href="/review"
-                className="inline-block text-[var(--accent)]"
+                className="inline-block text-(--accent)"
               >
                 Open review queue →
               </Link>
@@ -206,7 +206,7 @@ export default async function IncidentDetailPage({
             <li key={s.id}>
               <Link
                 href={`/incidents/${s.id}`}
-                className="text-[var(--accent)]"
+                className="text-(--accent)"
               >
                 {s.title}
               </Link>

@@ -41,13 +41,13 @@ export default async function IncidentsPage() {
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold">Incidents</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">
+        <p className="mt-1 text-sm text-(--muted)">
           Opened by the watcher when alert rules fire against live metrics.
         </p>
       </header>
-      <div className="panel divide-y divide-[var(--line)]">
+      <div className="panel divide-y divide-(--line)">
         {rows.length === 0 ? (
-          <p className="p-4 text-sm text-[var(--muted)]">No incidents yet.</p>
+          <p className="p-4 text-sm text-(--muted)">No incidents yet.</p>
         ) : (
           rows.map((r) => (
             <Link
@@ -57,12 +57,12 @@ export default async function IncidentsPage() {
             >
               <div>
                 <div className="font-medium">{r.title}</div>
-                <div className="text-xs text-[var(--muted)]">{r.opened_at}</div>
+                <div className="text-xs text-(--muted)">{r.opened_at}</div>
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
-                <span className="badge bg-[var(--line)]">{r.status}</span>
+                <span className="badge bg-(--line)">{r.status}</span>
                 {r.recommended_action ? (
-                  <span className="badge bg-[#0c4a6e] text-[var(--accent)]">
+                  <span className="badge bg-[#0c4a6e] text-(--accent)">
                     {r.recommended_action}
                     {r.confidence != null ? ` · ${r.confidence}%` : ""}
                   </span>

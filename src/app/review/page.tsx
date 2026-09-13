@@ -43,14 +43,14 @@ export default async function ReviewPage() {
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold">Review queue</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">
+        <p className="mt-1 text-sm text-(--muted)">
           Approve merges the remediation PR and redeploys. The LLM never mutates
           git.
         </p>
       </header>
 
       {rows.length === 0 ? (
-        <div className="panel p-4 text-sm text-[var(--muted)]">
+        <div className="panel p-4 text-sm text-(--muted)">
           Queue empty. Inject a fault, wait for an incident, then run diagnose.
         </div>
       ) : (
@@ -61,20 +61,20 @@ export default async function ReviewPage() {
                 <div>
                   <Link
                     href={`/incidents/${row.incident_id}`}
-                    className="font-medium text-[var(--accent)]"
+                    className="font-medium text-(--accent)"
                   >
                     {row.title}
                   </Link>
                   <div className="mt-1 text-sm">
-                    <span className="badge bg-[#0c4a6e] text-[var(--accent)]">
+                    <span className="badge bg-[#0c4a6e] text-(--accent)">
                       {row.recommended_action} →{" "}
                       {row.action_target.slice(0, 12)}
                     </span>
-                    <span className="ml-2 badge bg-[var(--line)]">
+                    <span className="ml-2 badge bg-(--line)">
                       {row.confidence}%
                     </span>
                   </div>
-                  <p className="mt-2 text-sm text-[var(--muted)]">
+                  <p className="mt-2 text-sm text-(--muted)">
                     {row.summary}
                   </p>
                   {row.pr_url ? (
@@ -83,12 +83,12 @@ export default async function ReviewPage() {
                         href={row.pr_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[var(--accent)] underline"
+                        className="text-(--accent) underline"
                       >
                         GitHub PR #{row.pr_number}
                       </a>
                       {row.pr_head_sha ? (
-                        <span className="ml-2 text-[var(--muted)]">
+                        <span className="ml-2 text-(--muted)">
                           head {row.pr_head_sha.slice(0, 12)}
                         </span>
                       ) : null}

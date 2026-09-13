@@ -103,11 +103,11 @@ export function ChaosConsole() {
             type="button"
             disabled={busy !== null}
             onClick={() => void inject(s.id)}
-            className="panel p-4 text-left hover:border-[var(--accent)] disabled:opacity-50"
+            className="panel p-4 text-left hover:border-(--accent) disabled:opacity-50"
           >
             <div className="font-semibold">{s.label}</div>
-            <div className="mt-1 text-sm text-[var(--muted)]">{s.blurb}</div>
-            <div className="mt-3 text-xs text-[var(--accent)]">
+            <div className="mt-1 text-sm text-(--muted)">{s.blurb}</div>
+            <div className="mt-3 text-xs text-(--accent)">
               {busy === s.id ? "Injecting…" : "Inject fault"}
             </div>
           </button>
@@ -119,7 +119,7 @@ export function ChaosConsole() {
           type="button"
           onClick={() => void hitCheckout()}
           disabled={busy !== null}
-          className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[#0b1220] disabled:opacity-50"
+          className="rounded-lg bg-(--accent) px-4 py-2 text-sm font-semibold text-[#0b1220] disabled:opacity-50"
         >
           Hit /sim/checkout
         </button>
@@ -127,7 +127,7 @@ export function ChaosConsole() {
           type="button"
           onClick={() => void tickWatch()}
           disabled={busy !== null}
-          className="rounded-lg border border-[var(--line)] px-4 py-2 text-sm disabled:opacity-50"
+          className="rounded-lg border border-(--line) px-4 py-2 text-sm disabled:opacity-50"
         >
           Tick + watch now
         </button>
@@ -135,17 +135,17 @@ export function ChaosConsole() {
           type="button"
           onClick={() => void clearAll()}
           disabled={busy !== null}
-          className="rounded-lg border border-[var(--danger)] px-4 py-2 text-sm text-[var(--danger)] disabled:opacity-50"
+          className="rounded-lg border border-(--danger) px-4 py-2 text-sm text-(--danger) disabled:opacity-50"
         >
           Clear faults
         </button>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <pre className="panel overflow-auto p-3 text-xs text-[var(--muted)]">
+        <pre className="panel overflow-auto p-3 text-xs text-(--muted)">
           {log}
         </pre>
-        <pre className="panel overflow-auto p-3 text-xs text-[var(--muted)]">
+        <pre className="panel overflow-auto p-3 text-xs text-(--muted)">
           {checkout || "Checkout response will appear here."}
         </pre>
       </div>

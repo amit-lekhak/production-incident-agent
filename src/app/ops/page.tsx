@@ -40,7 +40,7 @@ export default async function OpsPage() {
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold">Ops</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">
+        <p className="mt-1 text-sm text-(--muted)">
           Operator timeline from{" "}
           <code className="font-mono">incident_events</code>. LLM/tool
           waterfalls live in Langfuse when configured — not a homemade APM.
@@ -52,7 +52,7 @@ export default async function OpsPage() {
           Langfuse:{" "}
           <span
             className={
-              langfuseConfigured ? "text-[var(--ok)]" : "text-[var(--warn)]"
+              langfuseConfigured ? "text-(--ok)" : "text-(--warn)"
             }
           >
             {langfuseConfigured
@@ -60,15 +60,15 @@ export default async function OpsPage() {
               : "not configured (local demo OK)"}
           </span>
         </div>
-        <div className="mt-1 text-[var(--muted)]">
+        <div className="mt-1 text-(--muted)">
           Trace links appear when Langfuse is configured and a diagnosis run
           recorded an OTel trace id.
         </div>
       </div>
 
-      <div className="panel divide-y divide-[var(--line)]">
+      <div className="panel divide-y divide-(--line)">
         {events.length === 0 ? (
-          <p className="p-4 text-sm text-[var(--muted)]">
+          <p className="p-4 text-sm text-(--muted)">
             No pipeline events yet.
           </p>
         ) : (
@@ -77,26 +77,26 @@ export default async function OpsPage() {
             return (
               <div key={e.id} className="px-4 py-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="badge bg-[var(--line)]">{e.kind}</span>
+                  <span className="badge bg-(--line)">{e.kind}</span>
                   <Link
                     href={`/incidents/${e.incident_id}`}
-                    className="text-[var(--accent)]"
+                    className="text-(--accent)"
                   >
                     {e.title}
                   </Link>
-                  <span className="text-xs text-[var(--muted)]">
+                  <span className="text-xs text-(--muted)">
                     {e.status}
                   </span>
                 </div>
                 <div className="mt-1">{e.message}</div>
-                <div className="mt-1 flex gap-3 text-xs text-[var(--muted)]">
+                <div className="mt-1 flex gap-3 text-xs text-(--muted)">
                   <span>{e.created_at}</span>
                   {url ? (
                     <a
                       href={url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[var(--accent)]"
+                      className="text-(--accent)"
                     >
                       Langfuse trace
                     </a>
