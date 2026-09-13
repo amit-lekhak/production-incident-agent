@@ -8,6 +8,7 @@ const links = [
   { href: "/chaos", label: "Chaos", match: "prefix" as const },
   { href: "/incidents", label: "Incidents", match: "prefix" as const },
   { href: "/review", label: "Review", match: "prefix" as const },
+  { href: "/prs", label: "PRs", match: "prefix" as const },
   { href: "/ops", label: "Ops", match: "prefix" as const },
 ];
 
@@ -20,7 +21,7 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex w-full shrink-0 flex-row gap-2 overflow-x-auto border-b border-(--line) bg-(--sidebar) px-3 py-3 md:w-56 md:flex-col md:overflow-visible md:border-b-0 md:border-r md:px-4 md:py-6">
+    <aside className="flex w-full shrink-0 flex-row gap-2 overflow-x-auto border-b border-(--line) bg-(--sidebar) px-3 py-3 md:h-full md:w-56 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-4 md:py-6">
       <div className="mb-0 mr-3 shrink-0 md:mb-6 md:mr-0">
         <div className="text-sm font-semibold tracking-tight text-(--accent)">
           Relay Incident

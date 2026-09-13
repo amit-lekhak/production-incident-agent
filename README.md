@@ -44,7 +44,7 @@ Open http://localhost:3000 — ticker/watcher start on boot. Check `GET /api/hea
 2. Hit **/sim/checkout** or wait for the ticker — latency rises because the deployed tree is buggy
 3. Watcher opens an incident when windowed p95 > 2s (`suspect_deploy_sha` only when change-point correlates)
 4. With `AUTO_DIAGNOSE=true` (default), diagnosis starts automatically; otherwise click Diagnose — agents read metrics + GitHub commits/diffs; for revert recommendations, code opens a **revert PR** (confidence gate applies)
-5. **/review** — **Merge PR** / more evidence / **Close PR** (Approve merges the proposed PR and redeploys)
+5. **/prs** — **Merge PR** / more evidence / **Close PR** for revert remediations; **/review** — **Approve** / **Reject** for page/watch/restart/flag actions
 6. On merge, production redeploys, verifier checks the **trigger metric**, postmortem is written (failures do not keep the incident open)
 
 ## Scripts
@@ -54,7 +54,7 @@ Open http://localhost:3000 — ticker/watcher start on boot. Check `GET /api/hea
 - `pnpm graph:rebuild` — rebuild Graphify `graph.json` for the service
 - `pnpm eval` — oracle + live Gemini agent evals (**requires `GEMINI_API_KEY`**)
 - `pnpm eval:oracle` — deterministic oracle only (uses LocalReleaseProvider)
-- `pnpm test` — unit tests
+- `pnpm test` — unit tests against `TEST_DATABASE_URL` (`relay_incident_test`, never the app DB)
 - `pnpm smoke:loop` / `smoke:diagnose` / `smoke:chaos` — end-to-end CLI checks
 
 ## Docs

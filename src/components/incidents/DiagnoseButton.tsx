@@ -3,10 +3,24 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function DiagnoseButton({ incidentId }: { incidentId: string }) {
+const DIAGNOSIS_ALLOWED = new Set([
+  "detected",
+  "needs_human",
+  "awaiting_review",
+]);
+
+export function DiagnoseButton({
+  incidentId,
+  status,
+}: {
+  incidentId: string;
+  status: string;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!DIAGNOSIS_ALLOWED.has(status)) return null;
 
   async function run(forceOracle = false) {
     setBusy(true);

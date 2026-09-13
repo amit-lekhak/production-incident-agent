@@ -19,7 +19,7 @@
     "graph:rebuild": "tsx scripts/rebuild-graph.ts",
     "eval": "tsx evals/runner.ts",
     "eval:oracle": "tsx evals/runner.ts --oracle-only",
-    "test": "tsx --test src/lib/agent/provider-errors.test.ts src/lib/agent/pipeline.test.ts src/lib/agent/actions.test.ts src/lib/sim/watcher.test.ts src/lib/codegraph/query.test.ts evals/oracle.test.ts",
+    "test": "tsx scripts/run-tests.ts",
     "smoke:loop": "tsx scripts/smoke-loop.ts",
     "smoke:diagnose": "tsx scripts/smoke-diagnose.ts",
     "smoke:chaos": "tsx scripts/smoke-chaos.ts"

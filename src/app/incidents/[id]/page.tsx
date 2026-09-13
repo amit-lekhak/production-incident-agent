@@ -99,7 +99,7 @@ export default async function IncidentDetailPage({
             ) : null}
           </div>
         </div>
-        <DiagnoseButton incidentId={id} />
+        <DiagnoseButton incidentId={id} status={incident.status} />
       </header>
 
       {incident.needs_human_reason ? (

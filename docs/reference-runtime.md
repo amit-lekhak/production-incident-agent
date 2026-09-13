@@ -14,7 +14,7 @@
 
 `detected` → (`AUTO_DIAGNOSE`) → `investigating` → `awaiting_review` → `acting` → `verifying` → `resolved`
 
-Also: `needs_human`, `closed_rejected`. Diagnose CAS only from `detected` | `needs_human` | `awaiting_review`. Review requires `awaiting_review` and a pending review row. For `revert_pr`, diagnose opens a GitHub PR; Approve merges it and redeploys. Approving `watch` / `page_human` skips verify. Postmortem failure does not unblock `resolved` once metrics recover.
+Also: `needs_human`, `closed_rejected`. Diagnose CAS only from `detected` | `needs_human` | `awaiting_review`. Review requires `awaiting_review` and a pending review row. For `revert_pr`, diagnose opens a GitHub PR shown on **/prs** (Merge / Close); non-PR actions stay on **/review** (Approve / Reject). Approving `watch` / `page_human` skips verify. Postmortem failure does not unblock `resolved` once metrics recover.
 
 ## Tools (read-only)
 

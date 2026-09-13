@@ -29,9 +29,9 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full`}
     >
-      <body className="flex min-h-full flex-col overflow-x-hidden md:flex-row">
+      <body className="flex h-dvh flex-col overflow-hidden md:flex-row">
         <Sidebar />
-        <main className="min-h-screen min-w-0 flex-1 px-4 py-5 md:px-8 md:py-6">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6">
           {children}
         </main>
       </body>
