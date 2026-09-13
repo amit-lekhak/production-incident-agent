@@ -15,6 +15,7 @@
     "db:push": "tsx scripts/ensure-db.ts && drizzle-kit push",
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "tsx scripts/seed.ts",
+    "service:bootstrap": "tsx scripts/service-bootstrap.ts",
     "graph:rebuild": "tsx scripts/rebuild-graph.ts",
     "eval": "tsx evals/runner.ts",
     "eval:oracle": "tsx evals/runner.ts --oracle-only",
