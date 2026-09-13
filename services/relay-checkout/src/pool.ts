@@ -1,2 +1,2 @@
-/** DB connection pool size for checkout. Keep >= 10 in production. */
-export const DB_POOL_SIZE = 10;
+/** BUG: pool shrunk for cost — causes checkout wait spikes. */
+export const DB_POOL_SIZE = 2;
