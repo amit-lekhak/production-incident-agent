@@ -101,6 +101,12 @@ export default async function IncidentDetailPage({
     ORDER BY opened_at DESC LIMIT 3
   `;
 
+  const [postmortem] = await sql<{ id: string; title: string }[]>`
+    SELECT id::text AS id, title FROM postmortems
+    WHERE incident_id = ${id}::uuid
+    LIMIT 1
+  `;
+
   const traceUrl = langfuseTraceUrl(incident.langfuse_trace_id);
   const topCause = hypotheses[0]?.cause_type ?? null;
   const summary = rec
@@ -210,6 +216,16 @@ export default async function IncidentDetailPage({
           <Link href={reviewHref} className="inline-block text-(--accent)">
             Open {rec?.pr_number != null ? "PRs" : "Review"} →
           </Link>
+        ) : null}
+        {postmortem ? (
+          <p>
+            <Link
+              href={`/postmortems/${postmortem.id}`}
+              className="text-(--accent)"
+            >
+              Open postmortem →
+            </Link>
+          </p>
         ) : null}
         {traceUrl ? (
           <a

@@ -34,11 +34,15 @@ export default async function PostmortemPage({
   return (
     <div className="space-y-6">
       <header>
+        <Link href="/postmortems" className="text-xs text-(--muted)">
+          ← Postmortems
+        </Link>
+        <span className="mx-2 text-xs text-(--muted)">·</span>
         <Link
           href={`/incidents/${pm.incident_id}`}
           className="text-xs text-(--muted)"
         >
-          ← Incident
+          Incident
         </Link>
         <h1 className="mt-1 text-2xl font-semibold">{pm.title}</h1>
         <div

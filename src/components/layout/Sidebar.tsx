@@ -9,6 +9,7 @@ const links = [
   { href: "/incidents", label: "Incidents", match: "prefix" as const },
   { href: "/review", label: "Review", match: "prefix" as const },
   { href: "/prs", label: "PRs", match: "prefix" as const },
+  { href: "/postmortems", label: "Postmortems", match: "prefix" as const },
   { href: "/ops", label: "Ops", match: "prefix" as const },
 ];
 
