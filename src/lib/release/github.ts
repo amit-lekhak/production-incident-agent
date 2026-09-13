@@ -1,8 +1,9 @@
 import { Octokit } from "@octokit/rest";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { getEnv } from "@/lib/env";
+import { worktreeRoot } from "./worktree-root";
 import type {
   CommitRecord,
   DeployRecord,
@@ -41,7 +42,7 @@ export class GitHubReleaseProvider implements ReleaseProvider {
     this.owner = owner;
     this.repo = name;
     this.octokit = new Octokit({ auth: token });
-    this.workRoot = resolve(process.cwd(), ".relay-worktrees");
+    this.workRoot = worktreeRoot();
   }
 
   async currentDeploy(): Promise<DeployRecord | null> {
@@ -99,7 +100,7 @@ export class GitHubReleaseProvider implements ReleaseProvider {
   }
 
   async getFile(sha: string, path: string): Promise<string> {
-    const filePath = path.startsWith(SERVICE_PREFIX)
+    const filePath = path.startsWith("services/")
       ? path
       : `${SERVICE_PREFIX}${path.replace(/^\//, "")}`;
     const { data } = await this.octokit.repos.getContent({

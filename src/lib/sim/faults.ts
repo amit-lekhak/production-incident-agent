@@ -1,10 +1,10 @@
 import { sql } from "@/lib/db";
 import { getReleaseProvider } from "@/lib/release";
 import {
-  activateDeployedSha,
+  activateFromFiles,
   syncRuntimeFromCurrentDeploy,
 } from "./deployed-runtime";
-import { loadHealthyServiceFiles, loadScenarioPatch } from "./patches";
+import { loadHealthyServiceFilesSafe, loadScenarioPatchSafe } from "./patches";
 import { SCENARIO_META, type ActiveFault, type FaultScenario } from "./types";
 
 function jsonb(value: unknown) {
@@ -53,10 +53,8 @@ export async function injectFault(scenario: FaultScenario) {
   const meta = SCENARIO_META[scenario];
   const provider = getReleaseProvider();
   // Reset to healthy service files first so scenarios do not stack.
-  const healthy = loadHealthyServiceFiles().filter(
-    (f) => f.path.endsWith(".ts") || f.path.endsWith("package.json"),
-  );
-  const patch = loadScenarioPatch(scenario);
+  const healthy = await loadHealthyServiceFilesSafe();
+  const patch = await loadScenarioPatchSafe(scenario);
   const byPath = new Map(healthy.map((f) => [f.path, f]));
   for (const f of patch) byPath.set(f.path, f);
   const files = [...byPath.values()];
@@ -67,7 +65,7 @@ export async function injectFault(scenario: FaultScenario) {
   });
 
   const deploy = await provider.createDeployment(sha, meta.summary);
-  await activateDeployedSha(deploy.sha);
+  await activateFromFiles(deploy.sha, files);
 
   await sql`
     UPDATE active_faults

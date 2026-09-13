@@ -29,6 +29,30 @@ const SCENARIOS = [
   },
 ] as const;
 
+async function readResponseJson(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text.trim()) {
+    throw new Error(
+      `Empty response (${res.status} ${res.statusText || "no status"}). On Vercel this is usually a timeout or a crash before JSON was written.`,
+    );
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(`Non-JSON response (${res.status}): ${text.slice(0, 240)}`);
+  }
+}
+
+function errorFromJson(json: unknown): string | null {
+  if (!json || typeof json !== "object") return null;
+  const err = (json as { error?: unknown }).error;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return null;
+}
+
 export function ChaosConsole() {
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<string>("Ready.");
@@ -42,10 +66,15 @@ export function ChaosConsole() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "inject", scenario }),
       });
-      const json = await res.json();
+      const json = await readResponseJson(res);
+      const apiError = errorFromJson(json);
+      if (!res.ok || apiError) {
+        throw new Error(apiError ?? `Inject failed (${res.status})`);
+      }
+      const injected = (json as { injected?: { deploySha?: string } }).injected;
       const sha =
-        typeof json?.injected?.deploySha === "string"
-          ? json.injected.deploySha.slice(0, 7)
+        typeof injected?.deploySha === "string"
+          ? injected.deploySha.slice(0, 7)
           : null;
       const label = SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
       setLog(
@@ -70,10 +99,16 @@ export function ChaosConsole() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "clear" }),
       });
-      const json = await res.json();
+      const json = await readResponseJson(res);
+      const apiError = errorFromJson(json);
+      if (!res.ok || apiError) {
+        throw new Error(apiError ?? `Clear failed (${res.status})`);
+      }
       setLog(
         ["Cleared chaos state", "", JSON.stringify(json, null, 2)].join("\n"),
       );
+    } catch (err) {
+      setLog(String(err));
     } finally {
       setBusy(null);
     }
@@ -83,8 +118,10 @@ export function ChaosConsole() {
     setBusy("checkout");
     try {
       const res = await fetch("/sim/checkout", { method: "POST" });
-      const json = await res.json();
+      const json = await readResponseJson(res);
       setCheckout(JSON.stringify(json, null, 2));
+    } catch (err) {
+      setCheckout(String(err));
     } finally {
       setBusy(null);
     }
@@ -103,7 +140,11 @@ export function ChaosConsole() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "watch" }),
       });
-      const json = await res.json();
+      const json = await readResponseJson(res);
+      const apiError = errorFromJson(json);
+      if (!res.ok || apiError) {
+        throw new Error(apiError ?? `Watch failed (${res.status})`);
+      }
       setLog(
         [
           "Sampled metrics and evaluated alert rules",
@@ -111,6 +152,8 @@ export function ChaosConsole() {
           JSON.stringify(json, null, 2),
         ].join("\n"),
       );
+    } catch (err) {
+      setLog(String(err));
     } finally {
       setBusy(null);
     }

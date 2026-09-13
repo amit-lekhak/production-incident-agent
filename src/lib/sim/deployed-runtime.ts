@@ -1,7 +1,14 @@
 import { createJiti } from "jiti";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { getReleaseProvider } from "@/lib/release";
+import { worktreeRoot } from "@/lib/release/worktree-root";
 import type { FaultScenario } from "./types";
 
 export type CheckoutSpan = {
@@ -104,11 +111,34 @@ export function getDeployedRuntime(): DeployedRuntime | null {
   return runtime;
 }
 
-export async function activateDeployedSha(
+function materializeWorktree(
   sha: string,
+  files: Array<{ path: string; content: string }>,
+): string {
+  const dest = join(
+    /*turbopackIgnore: true*/ worktreeRoot(),
+    sha.slice(0, 12) || "local",
+  );
+  if (existsSync(/*turbopackIgnore: true*/ dest)) {
+    rmSync(/*turbopackIgnore: true*/ dest, { recursive: true, force: true });
+  }
+  mkdirSync(/*turbopackIgnore: true*/ dest, { recursive: true });
+  for (const f of files) {
+    const rel = f.path
+      .replace(/^services\/relay-checkout\//, "")
+      .replace(/^\//, "");
+    if (!rel) continue;
+    const out = join(/*turbopackIgnore: true*/ dest, rel);
+    mkdirSync(/*turbopackIgnore: true*/ dirname(out), { recursive: true });
+    writeFileSync(/*turbopackIgnore: true*/ out, f.content, "utf8");
+  }
+  return dest;
+}
+
+async function setRuntime(
+  sha: string,
+  workDir: string,
 ): Promise<DeployedRuntime> {
-  const provider = getReleaseProvider();
-  const workDir = await provider.checkoutDeployed(sha);
   const inferred = inferScenario(workDir);
   const loaded = await loadModule(workDir);
   runtime = {
@@ -120,6 +150,22 @@ export async function activateDeployedSha(
     takeSpans: loaded.takeSpans,
   };
   return runtime;
+}
+
+export async function activateDeployedSha(
+  sha: string,
+): Promise<DeployedRuntime> {
+  const provider = getReleaseProvider();
+  const workDir = await provider.checkoutDeployed(sha);
+  return setRuntime(sha, workDir);
+}
+
+/** Activate without a second GitHub download (inject already has the tree). */
+export async function activateFromFiles(
+  sha: string,
+  files: Array<{ path: string; content: string }>,
+): Promise<DeployedRuntime> {
+  return setRuntime(sha, materializeWorktree(sha, files));
 }
 
 /** Sync runtime from current GitHub production deploy (boot / after merge). */
