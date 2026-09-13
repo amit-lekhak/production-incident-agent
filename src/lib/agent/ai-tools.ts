@@ -29,14 +29,36 @@ export function buildAiTools(rt: ToolRuntime) {
       execute: async (args) => t.query_traces(args),
     }),
     list_deployments: tool({
-      description: "List recent deployments and which SHA is active.",
+      description:
+        "List recent GitHub production deployments and which SHA is live.",
       inputSchema: z.object({ limit: z.number().optional() }),
       execute: async (args) => t.list_deployments(args),
     }),
     list_commits: tool({
-      description: "List recent git commits for the service.",
+      description:
+        "List recent git commits touching services/relay-checkout on GitHub.",
       inputSchema: z.object({ limit: z.number().optional() }),
       execute: async (args) => t.list_commits(args),
+    }),
+    read_source: tool({
+      description:
+        "Read a services/relay-checkout source file at the live (or given) deploy SHA.",
+      inputSchema: z.object({
+        path: z
+          .string()
+          .describe("Path under services/relay-checkout, e.g. src/checkout.ts"),
+        sha: z.string().optional(),
+      }),
+      execute: async (args) => t.read_source(args),
+    }),
+    diff_deploys: tool({
+      description:
+        "Diff services/relay-checkout between two production deploys (defaults: previous vs live).",
+      inputSchema: z.object({
+        base: z.string().optional(),
+        head: z.string().optional(),
+      }),
+      execute: async (args) => t.diff_deploys(args),
     }),
     list_errors: tool({
       description: "List simulated error events (error inbox).",
@@ -60,7 +82,7 @@ export function buildAiTools(rt: ToolRuntime) {
     }),
     get_service_health: tool({
       description:
-        "Snapshot of active deploy, active fault, and latest metrics.",
+        "Snapshot of live GitHub deploy SHA, inferred scenario, and latest metrics.",
       inputSchema: z.object({}),
       execute: async () => t.get_service_health(),
     }),
