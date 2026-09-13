@@ -3,6 +3,7 @@ import { generateText, Output, stepCountIs } from "ai";
 import { buildAiTools } from "./ai-tools";
 import { buildTools, type ToolRuntime } from "./tools";
 import { ensureGeminiKey, geminiModel } from "./provider-config";
+import { recordLlmUsage } from "@/lib/observability/llm-usage";
 import {
   hypothesesSchema,
   recommendationSchema,
@@ -52,15 +53,39 @@ function summarizeTools(tools: ToolInvocation[]): string {
     .join("\n\n");
 }
 
+async function captureUsage(
+  incidentId: string,
+  functionId: string,
+  result: {
+    usage?: {
+      inputTokens?: number | null;
+      outputTokens?: number | null;
+      totalTokens?: number | null;
+    };
+  },
+  startedAt: number,
+) {
+  await recordLlmUsage({
+    incidentId,
+    functionId,
+    usage: result.usage,
+    latencyMs: Date.now() - startedAt,
+  }).catch((err) => {
+    console.warn("[llm-usage]", functionId, err);
+  });
+}
+
 export async function runIncidentAgent(
   rt: ToolRuntime,
   incidentTitle: string,
 ): Promise<{ hypotheses: HypothesesOutput; tools: ToolInvocation[] }> {
   const tools = buildAiTools(rt);
+  const gatherStarted = Date.now();
   const gather = await generateText({
     model: google(geminiModel()),
     tools,
     stopWhen: stepCountIs(8),
+    maxOutputTokens: 400,
     telemetry: {
       functionId: "incident-agent-gather",
       metadata: { incidentId: rt.incidentId },
@@ -68,24 +93,35 @@ export async function runIncidentAgent(
     system: `You are the Incident Agent for Relay Checkout.
 Gather evidence with tools. Do NOT recommend or execute actions.
 Call get_service_health, query_metrics, query_traces, list_deployments, and any other needed tools.
-Infer causes from metrics/traces/diffs/source — never expect a "scenario" label in tool output.
-Typical causes: n_plus_one, payment_timeout, error_spike, pool_exhaustion.`,
+Infer the actual failure from metrics/traces/diffs/source — never expect a "scenario" label.
+After tools, write at most 3 plain sentences about what broke. Never paste request IDs, metric series, JSON, or tool dumps.`,
     prompt: `Investigate incident: ${incidentTitle}
 Use tools now to gather evidence. Prefer tool display strings over invention.`,
   });
+  await captureUsage(
+    rt.incidentId,
+    "incident-agent-gather",
+    gather,
+    gatherStarted,
+  );
 
   const toolInvocations = collectToolInvocations(gather.steps ?? []);
   const evidencePack = summarizeTools(toolInvocations);
 
+  const structuredStarted = Date.now();
   const structured = await generateText({
     model: google(geminiModel()),
     output: Output.object({ schema: hypothesesSchema }),
+    maxOutputTokens: 800,
     telemetry: {
       functionId: "incident-agent-structure",
       metadata: { incidentId: rt.incidentId },
     },
     system: `You propose ranked hypotheses for Relay Checkout incidents.
-Use ONLY the provided tool evidence. Do not invent metrics.`,
+Use ONLY the provided tool evidence. Do not invent metrics.
+Each hypothesis needs a free-form headline that names the actual root cause in one line
+(e.g. "Checkout awaits catalog.lookup once per cart line after deploy abc1234").
+Do not use closed enum labels like n_plus_one — describe what the evidence shows.`,
     prompt: `Incident: ${incidentTitle}
 
 Tool evidence:
@@ -94,8 +130,14 @@ ${evidencePack || "(no tools called — use get_service_health signals if presen
 Agent notes:
 ${gather.text || "(none)"}
 
-Output ranked hypotheses.`,
+Output ranked hypotheses with headline + why.`,
   });
+  await captureUsage(
+    rt.incidentId,
+    "incident-agent-structure",
+    structured,
+    structuredStarted,
+  );
 
   if (!structured.output) {
     throw new Error("Incident agent returned no structured hypotheses");
@@ -114,36 +156,47 @@ export async function runEvidenceAgent(
   tools: ToolInvocation[];
 }> {
   const tools = buildAiTools(rt);
+  const gatherStarted = Date.now();
   const gather = await generateText({
     model: google(geminiModel()),
     tools,
     stopWhen: stepCountIs(8),
+    maxOutputTokens: 400,
     telemetry: {
       functionId: "evidence-agent-gather",
       metadata: { incidentId: rt.incidentId },
     },
     system: `You are the Evidence Agent. Try to DISPROVE hypotheses first.
-Re-check metrics/traces/deployments/flags/code as needed. Do not execute mutations.`,
+Re-check metrics/traces/deployments/flags/code as needed. Do not execute mutations.
+After tools, write at most 3 plain sentences. Never paste request IDs, metric series, or JSON.`,
     prompt: `Hypotheses to evaluate:
 ${JSON.stringify(hypotheses, null, 2)}
 
 Gather evidence with tools.`,
   });
+  await captureUsage(
+    rt.incidentId,
+    "evidence-agent-gather",
+    gather,
+    gatherStarted,
+  );
 
   const toolInvocations = collectToolInvocations(gather.steps ?? []);
   const evidencePack = summarizeTools(toolInvocations);
 
+  const structuredStarted = Date.now();
   const structured = await generateText({
     model: google(geminiModel()),
     output: Output.object({ schema: recommendationSchema }),
+    maxOutputTokens: 900,
     telemetry: {
       functionId: "evidence-agent-structure",
       metadata: { incidentId: rt.incidentId },
     },
-    system: `Choose recommended_action carefully:
-- n_plus_one / error_spike / pool_exhaustion → revert_pr with live deploy sha as action_target
-- payment_timeout → disable_flag with action_target=payments_v2 (revert_pr would be wrong)
-- if unsure → page_human or watch
+    system: `Choose recommended_action from evidence — not from a fixed cause label map:
+- Symptom started after a deploy and live diff/source explains it → revert_pr with that live deploy sha as action_target
+- A feature flag is on and traces/metrics pin the failure to that path → disable_flag with the flag key as action_target
+- Unsure or conflicting evidence → page_human or watch
 Write summary as 1–2 plain sentences for an on-call engineer (what broke + what to do).
 Never paste tool display strings, similar-incident lists, metric series, or "catalog.lookup …" dumps into summary.
 Put tool quotes only in evidence[].display. Never invent metric series.
@@ -159,6 +212,12 @@ ${gather.text || "(none)"}
 
 Output a recommendation with confidence and a plain-language summary.`,
   });
+  await captureUsage(
+    rt.incidentId,
+    "evidence-agent-structure",
+    structured,
+    structuredStarted,
+  );
 
   if (!structured.output) {
     throw new Error("Evidence agent returned no recommendation");
@@ -191,8 +250,8 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   const db = await tools.query_db_timings({ minutes: 15 });
   const metrics = health.metrics ?? [];
 
-  // Infer similar-incident hint from live signals (not a hardcoded cause).
-  let causeHint: string | undefined;
+  // Infer similar-incident search hint from live signals (not a closed cause enum).
+  let searchHint: string | undefined;
   const errRate =
     metrics.find((m: { name: string }) => m.name === "checkout_error_rate")
       ?.value ?? 0;
@@ -203,43 +262,25 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
     metrics.find((m: { name: string }) => m.name === "db_pool_wait_ms")
       ?.value ?? 0;
   if (checkoutLooksNPlusOne(source.text) || (db.catalogAvgMs ?? 0) >= 200) {
-    causeHint = "n_plus_one";
+    searchHint = "catalog lookup";
   } else if (payP99 >= 1000 || source.text.includes("chargePaymentSlow")) {
-    causeHint = "payment_timeout";
+    searchHint = "payment";
   } else if (errRate >= 0.05 || (errors.rows?.length ?? 0) > 0) {
-    causeHint = "error_spike";
+    searchHint = "error";
   } else if (poolMetric >= 400 || /DB_POOL_SIZE\s*=\s*2/.test(poolSrc.text)) {
-    causeHint = "pool_exhaustion";
+    searchHint = "pool";
   }
   const similar = await tools.list_similar_incidents({
-    causeHint,
+    searchHint,
     limit: 5,
   });
 
   const activeSha = health.deploy?.sha ?? null;
+  const short = activeSha?.slice(0, 7) ?? "unknown";
   const catalogAvgMs = db.catalogAvgMs;
-  const catalogLookups = (traces.rows ?? []).map(
-    (r: { catalogLookups?: number }) => r.catalogLookups ?? 0,
-  );
-  const avgLookups =
-    catalogLookups.length === 0
-      ? 0
-      : catalogLookups.reduce((a: number, b: number) => a + b, 0) /
-        catalogLookups.length;
-  const payMs = (traces.rows ?? [])
-    .map((r: { paymentMs?: number | null }) => r.paymentMs ?? 0)
-    .filter((n: number) => n > 0);
-  const avgPay =
-    payMs.length === 0
-      ? 0
-      : payMs.reduce((a: number, b: number) => a + b, 0) / payMs.length;
-  const poolWait = (traces.rows ?? [])
-    .map((r: { poolWaitMs?: number | null }) => r.poolWaitMs ?? 0)
-    .filter((n: number) => n > 0);
-  const avgPool =
-    poolWait.length === 0
-      ? 0
-      : poolWait.reduce((a: number, b: number) => a + b, 0) / poolWait.length;
+  const avgLookups = traces.avgCatalogLookups ?? 0;
+  const avgPay = traces.avgPaymentMs ?? 0;
+  const avgPool = traces.avgPoolWaitMs ?? 0;
   const errorRate =
     metrics.find((m: { name: string }) => m.name === "checkout_error_rate")
       ?.value ?? 0;
@@ -251,72 +292,72 @@ export async function oracleDiagnose(rt: ToolRuntime): Promise<{
   const poolText = poolSrc.text;
   void `${checkoutSrc}\n${poolText}\n${diff.diff}`;
 
-  let cause: HypothesesOutput["hypotheses"][0]["cause_type"] = "unknown";
   let action: RecommendationOutput["recommended_action"] = "page_human";
   let target = activeSha ?? "unknown";
   let confidence = 55;
+  let headline = "Insufficient signal to name a root cause";
   let why = "Insufficient signal";
 
   // Prefer live source signals first so stale metrics cannot override the deploy.
   if (checkoutLooksNPlusOne(checkoutSrc)) {
-    cause = "n_plus_one";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 87;
-    why = `Catalog lookups ~${avgLookups.toFixed(1)}× per request (avg ${catalogAvgMs}ms) after deploy ${activeSha?.slice(0, 7) ?? "unknown"} — recommend revert.`;
+    headline = `Checkout awaits catalog.lookup once per cart line after deploy ${short}`;
+    why = `Catalog lookups ~${avgLookups.toFixed(1)}× per request (avg ${catalogAvgMs}ms) after deploy ${short} — recommend revert.`;
   } else if (/meta!\.source|req\.meta!\.source/.test(checkoutSrc)) {
-    cause = "error_spike";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 80;
+    headline = `Checkout throws on missing cart metadata after deploy ${short}`;
     why =
       "Checkout throws on missing cart metadata after this deploy — recommend revert.";
   } else if (/DB_POOL_SIZE\s*=\s*2/.test(poolText)) {
-    cause = "pool_exhaustion";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 82;
+    headline = `DB pool size reduced to 2 after deploy ${short}`;
     why =
       "DB pool size reduced to 2 in source; pool wait elevated — recommend revert.";
   } else if (checkoutSrc.includes("chargePaymentSlow")) {
-    cause = "payment_timeout";
     action = "disable_flag";
     target = "payments_v2";
     confidence = 84;
+    headline = "Payments path is slow under the payments_v2 flag";
     why =
       "Payments path is slow under payments_v2 — disable the flag instead of reverting.";
   } else if (avgPay >= 1200 || paymentsP99 >= 1500) {
-    cause = "payment_timeout";
     action = "disable_flag";
     target = "payments_v2";
     confidence = 84;
+    headline = "Payments latency elevated under payments_v2";
     why =
       "Payments latency elevated — disable payments_v2 instead of reverting the deploy.";
   } else if (errorRate >= 0.05 || (errors.rows?.length ?? 0) > 0) {
-    cause = "error_spike";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 80;
+    headline = `Error rate elevated after deploy ${short}`;
     why = "Error rate / error events elevated after deploy — recommend revert.";
   } else if (avgPool >= 400) {
-    cause = "pool_exhaustion";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 82;
+    headline = `DB pool wait elevated after deploy ${short}`;
     why = "DB pool wait elevated — recommend revert of the suspect deploy.";
   } else if (catalogAvgMs >= 200 || avgLookups >= 2.5) {
-    cause = "n_plus_one";
     action = "revert_pr";
     target = activeSha ?? "unknown";
     confidence = 87;
-    why = `Catalog lookups ~${avgLookups.toFixed(1)}× per request (avg ${catalogAvgMs}ms) after deploy ${activeSha?.slice(0, 7) ?? "unknown"} — recommend revert.`;
+    headline = `Catalog lookups ~${avgLookups.toFixed(1)}× per request after deploy ${short}`;
+    why = `Catalog lookups ~${avgLookups.toFixed(1)}× per request (avg ${catalogAvgMs}ms) after deploy ${short} — recommend revert.`;
   }
 
   const hypotheses: HypothesesOutput = {
     hypotheses: [
       {
         rank: 1,
-        cause_type: cause,
+        headline,
         suspect_deploy: activeSha,
         supporting_tool_names: [
           "query_traces",

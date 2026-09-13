@@ -32,6 +32,23 @@ function collectDisplays(value: unknown, into: string[]) {
   }
 }
 
+function headlineBlob(hypotheses: HypothesesOutput): string {
+  return hypotheses.hypotheses
+    .map((h) => `${h.headline}\n${h.why}`)
+    .join("\n")
+    .toLowerCase();
+}
+
+/** Pass if any expected phrase appears in headline+why. */
+export function headlineSignalsOk(
+  hypotheses: HypothesesOutput,
+  phrases: string[],
+): boolean {
+  if (!phrases.length) return true;
+  const blob = headlineBlob(hypotheses);
+  return phrases.some((p) => blob.includes(p.toLowerCase()));
+}
+
 export function scoreAgent(input: {
   c: EvalCase;
   hypotheses: HypothesesOutput;
@@ -40,21 +57,27 @@ export function scoreAgent(input: {
   activeSha: string | null;
 }): AgentScore {
   const checks: Check[] = [];
-  const cause = input.hypotheses.hypotheses[0]?.cause_type;
+  const headline = input.hypotheses.hypotheses[0]?.headline;
   const action = input.recommendation.recommended_action;
   const target = input.recommendation.action_target;
   const called = new Set(input.tools.map((t) => t.name));
 
   checks.push({
     name: "structured_output",
-    ok: Boolean(input.hypotheses.hypotheses.length && action),
-    detail: `cause=${cause} action=${action}`,
+    ok: Boolean(input.hypotheses.hypotheses.length && action && headline),
+    detail: `headline=${headline?.slice(0, 80)} action=${action}`,
   });
 
+  const signalsOk = headlineSignalsOk(
+    input.hypotheses,
+    input.c.expectHeadlineIncludes,
+  );
   checks.push({
-    name: "cause",
-    ok: cause === input.c.expectCause,
-    detail: `got ${cause}, want ${input.c.expectCause}`,
+    name: "headline_signals",
+    ok: signalsOk,
+    detail: signalsOk
+      ? `matched one of [${input.c.expectHeadlineIncludes.join(", ")}]`
+      : `headline/why missing signals [${input.c.expectHeadlineIncludes.join(", ")}]; got ${headline}`,
   });
 
   checks.push({

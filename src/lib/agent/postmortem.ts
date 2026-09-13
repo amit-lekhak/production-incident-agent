@@ -46,8 +46,8 @@ export async function writePostmortem(
     FROM recommendations WHERE incident_id = ${incidentId}::uuid
     ORDER BY created_at DESC LIMIT 1
   `;
-  const [hyp] = await sql<{ cause_type: string; why: string }[]>`
-    SELECT cause_type, why FROM hypotheses
+  const [hyp] = await sql<{ headline: string; why: string }[]>`
+    SELECT headline, why FROM hypotheses
     WHERE incident_id = ${incidentId}::uuid
     ORDER BY rank ASC LIMIT 1
   `;
@@ -73,9 +73,11 @@ export async function writePostmortem(
   );
 
   if (hasKey) {
+    const started = Date.now();
     const result = await generateText({
       model: google(geminiModel()),
       output: Output.object({ schema: postmortemSchema }),
+      maxOutputTokens: 1200,
       telemetry: {
         functionId: "postmortem-agent",
         metadata: { incidentId },
@@ -83,6 +85,13 @@ export async function writePostmortem(
       system: `You write postmortems ONLY from the provided incident record. Do not invent new investigation.`,
       prompt: `Write a postmortem from this record:\n${JSON.stringify(record, null, 2)}`,
     });
+    const { recordLlmUsage } = await import("@/lib/observability/llm-usage");
+    await recordLlmUsage({
+      incidentId,
+      functionId: "postmortem-agent",
+      usage: result.usage,
+      latencyMs: Date.now() - started,
+    }).catch(() => undefined);
     if (!result.output) throw new Error("Postmortem agent returned nothing");
     output = result.output;
   } else {
@@ -93,7 +102,7 @@ export async function writePostmortem(
         at: e.created_at,
         event: `${e.kind}: ${e.message}`,
       })),
-      root_cause: hyp?.why ?? "See incident record",
+      root_cause: hyp?.headline ?? hyp?.why ?? "See incident record",
       impact: `Trigger ${incident?.trigger_metric ?? "n/a"}; deploy ${incident?.suspect_deploy_sha ?? "n/a"}`,
       resolution: `${action?.kind ?? rec?.recommended_action} ${action?.target ?? rec?.action_target} (${action?.status ?? "n/a"})`,
       action_items: [

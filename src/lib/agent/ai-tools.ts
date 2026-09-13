@@ -75,14 +75,19 @@ export function buildAiTools(rt: ToolRuntime) {
       description:
         "Find resolved past incidents and their recommended actions.",
       inputSchema: z.object({
-        causeHint: z.string().optional(),
+        searchHint: z
+          .string()
+          .optional()
+          .describe(
+            "Optional keywords from headline/why to match similar incidents",
+          ),
         limit: z.number().optional(),
       }),
       execute: async (args) => t.list_similar_incidents(args),
     }),
     get_service_health: tool({
       description:
-        "Snapshot of live GitHub deploy SHA, inferred scenario, and latest metrics.",
+        "Snapshot of live GitHub deploy SHA, feature flags, and latest metrics.",
       inputSchema: z.object({}),
       execute: async () => t.get_service_health(),
     }),

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { langfuseTraceUrl } from "@/lib/observability/incident-events";
+import { formatTokenCount } from "@/lib/observability/llm-usage";
 import {
   eventKindLabel,
   operatorEventMessage,
@@ -50,6 +51,8 @@ export default async function OpsPage({
       trigger_metric: string | null;
       trigger_value: number | null;
       langfuse_trace_id: string | null;
+      input_tokens: number | null;
+      output_tokens: number | null;
     }[]
   >`
     SELECT
@@ -63,13 +66,29 @@ export default async function OpsPage({
       i.status,
       i.trigger_metric,
       i.trigger_value,
-      i.langfuse_trace_id
+      i.langfuse_trace_id,
+      i.input_tokens,
+      i.output_tokens
     FROM incident_events e
     JOIN incidents i ON i.id = e.incident_id
     WHERE ${showNoise ? sql`true` : sql`e.kind <> 'alert_repeat'`}
     ORDER BY e.created_at DESC
     LIMIT ${PAGE_SIZE}
     OFFSET ${offset}
+  `;
+
+  const [tokenTotals] = await sql<
+    {
+      input_tokens: number;
+      output_tokens: number;
+      incidents_with_usage: number;
+    }[]
+  >`
+    SELECT
+      COALESCE(SUM(input_tokens), 0)::int AS input_tokens,
+      COALESCE(SUM(output_tokens), 0)::int AS output_tokens,
+      COUNT(*) FILTER (WHERE input_tokens IS NOT NULL OR output_tokens IS NOT NULL)::int AS incidents_with_usage
+    FROM incidents
   `;
 
   const [noiseCount] = await sql<{ n: number }[]>`
@@ -115,6 +134,13 @@ export default async function OpsPage({
               ? `Showing all events · ${total} total`
               : `Quiet mode · ${total} events (hiding ${noiseCount?.n ?? 0} alert repeats)`}
           </div>
+          {(tokenTotals?.incidents_with_usage ?? 0) > 0 ? (
+            <div className="mt-1 text-(--muted)">
+              LLM usage · {formatTokenCount(tokenTotals?.input_tokens)} in /{" "}
+              {formatTokenCount(tokenTotals?.output_tokens)} out across{" "}
+              {tokenTotals?.incidents_with_usage} incidents
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
           {showNoise ? (
@@ -178,6 +204,12 @@ export default async function OpsPage({
                       · {formatLocalTime(e.created_at)}
                     </span>
                   </time>
+                  {e.input_tokens != null || e.output_tokens != null ? (
+                    <span>
+                      {formatTokenCount(e.input_tokens)} in /{" "}
+                      {formatTokenCount(e.output_tokens)} out
+                    </span>
+                  ) : null}
                   {url ? (
                     <a
                       href={url}

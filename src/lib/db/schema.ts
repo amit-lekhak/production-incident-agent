@@ -184,6 +184,8 @@ export const incidents = pgTable(
     suspectDeploySha: varchar("suspect_deploy_sha", { length: 40 }),
     langfuseTraceId: varchar("langfuse_trace_id", { length: 80 }),
     needsHumanReason: text("needs_human_reason"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
     openedAt: timestamp("opened_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -222,7 +224,10 @@ export const hypotheses = pgTable("hypotheses", {
     .notNull()
     .references(() => incidents.id),
   rank: integer("rank").notNull(),
-  causeType: varchar("cause_type", { length: 64 }).notNull(),
+  /** Free-form root cause headline (not a closed taxonomy). */
+  headline: text("headline").notNull(),
+  /** Legacy demo label; nullable and unused by product UI. */
+  causeType: varchar("cause_type", { length: 64 }),
   suspectDeploy: varchar("suspect_deploy", { length: 40 }),
   supportingToolNames: jsonb("supporting_tool_names")
     .$type<string[]>()
@@ -233,6 +238,25 @@ export const hypotheses = pgTable("hypotheses", {
     .defaultNow()
     .notNull(),
 });
+
+export const llmGenerations = pgTable(
+  "llm_generations",
+  {
+    id: serial("id").primaryKey(),
+    incidentId: uuid("incident_id")
+      .notNull()
+      .references(() => incidents.id),
+    functionId: varchar("function_id", { length: 80 }).notNull(),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    totalTokens: integer("total_tokens"),
+    latencyMs: integer("latency_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("llm_generations_incident_idx").on(t.incidentId)],
+);
 
 export const recommendations = pgTable("recommendations", {
   id: serial("id").primaryKey(),

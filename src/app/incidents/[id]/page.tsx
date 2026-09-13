@@ -2,11 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sql } from "@/lib/db";
 import { langfuseTraceUrl } from "@/lib/observability/incident-events";
+import { formatTokenCount } from "@/lib/observability/llm-usage";
 import { DiagnoseButton } from "@/components/incidents/DiagnoseButton";
 import {
   actionLabel,
   actionTargetLabel,
-  causeLabel,
   eventKindLabel,
   looksLikeDump,
   nextStepHint,
@@ -41,11 +41,14 @@ export default async function IncidentDetailPage({
       suspect_deploy_sha: string | null;
       needs_human_reason: string | null;
       langfuse_trace_id: string | null;
+      input_tokens: number | null;
+      output_tokens: number | null;
       opened_at: string;
     }[]
   >`
     SELECT id::text AS id, title, status, severity, trigger_metric, trigger_value,
-           suspect_deploy_sha, needs_human_reason, langfuse_trace_id, opened_at::text
+           suspect_deploy_sha, needs_human_reason, langfuse_trace_id,
+           input_tokens, output_tokens, opened_at::text
     FROM incidents WHERE id = ${id}::uuid
   `;
   if (!incident) notFound();
@@ -66,13 +69,13 @@ export default async function IncidentDetailPage({
   const hypotheses = await sql<
     {
       rank: number;
-      cause_type: string;
+      headline: string;
       suspect_deploy: string | null;
       why: string;
       supporting_tool_names: string[];
     }[]
   >`
-    SELECT rank, cause_type, suspect_deploy, why, supporting_tool_names
+    SELECT rank, headline, suspect_deploy, why, supporting_tool_names
     FROM hypotheses WHERE incident_id = ${id}::uuid
     ORDER BY rank ASC
   `;
@@ -95,6 +98,20 @@ export default async function IncidentDetailPage({
     ORDER BY created_at DESC LIMIT 1
   `;
 
+  const generations = await sql<
+    {
+      function_id: string;
+      input_tokens: number | null;
+      output_tokens: number | null;
+      latency_ms: number | null;
+    }[]
+  >`
+    SELECT function_id, input_tokens, output_tokens, latency_ms
+    FROM llm_generations
+    WHERE incident_id = ${id}::uuid
+    ORDER BY created_at ASC
+  `;
+
   const similar = await sql<{ id: string; title: string; status: string }[]>`
     SELECT id::text AS id, title, status FROM incidents
     WHERE status = 'resolved' AND id <> ${id}::uuid
@@ -108,10 +125,15 @@ export default async function IncidentDetailPage({
   `;
 
   const traceUrl = langfuseTraceUrl(incident.langfuse_trace_id);
-  const topCause = hypotheses[0]?.cause_type ?? null;
+  const topHeadline = hypotheses[0]?.headline ?? null;
+  const alertTitle = operatorIncidentTitle(incident.title, {
+    metric: incident.trigger_metric,
+    value: incident.trigger_value,
+  });
+  const pageTitle = topHeadline || alertTitle;
   const summary = rec
     ? operatorSummary({
-        cause: topCause,
+        cause: topHeadline,
         action: rec.recommended_action,
         target: rec.action_target,
         summary: rec.summary,
@@ -121,6 +143,8 @@ export default async function IncidentDetailPage({
     ? actionTargetLabel(rec.recommended_action, rec.action_target)
     : "";
   const reviewHref = rec?.pr_number != null ? "/prs" : "/review";
+  const hasTokenTotals =
+    incident.input_tokens != null || incident.output_tokens != null;
 
   return (
     <div className="space-y-6">
@@ -129,12 +153,12 @@ export default async function IncidentDetailPage({
           <Link href="/incidents" className="text-xs text-(--muted)">
             ← Incidents
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold">
-            {operatorIncidentTitle(incident.title, {
-              metric: incident.trigger_metric,
-              value: incident.trigger_value,
-            })}
-          </h1>
+          <h1 className="mt-1 text-2xl font-semibold">{pageTitle}</h1>
+          {topHeadline ? (
+            <p className="mt-1 text-sm text-(--muted)">
+              Triggered by {alertTitle}
+            </p>
+          ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-(--muted)">
             <time
               dateTime={incident.opened_at}
@@ -170,7 +194,7 @@ export default async function IncidentDetailPage({
           <dl className="space-y-1">
             <div>
               <dt className="inline text-(--muted)">Likely cause: </dt>
-              <dd className="inline font-medium">{causeLabel(topCause)}</dd>
+              <dd className="inline font-medium">{topHeadline ?? "Unknown"}</dd>
             </div>
             <div>
               <dt className="inline text-(--muted)">Recommend: </dt>
@@ -197,6 +221,24 @@ export default async function IncidentDetailPage({
           </p>
         )}
         {summary ? <p className="text-(--muted)">{summary}</p> : null}
+        {hasTokenTotals ? (
+          <p className="text-xs text-(--muted)">
+            Diagnosis {formatTokenCount(incident.input_tokens)} in /{" "}
+            {formatTokenCount(incident.output_tokens)} out
+            {generations.length > 0 ? ` · ${generations.length} calls` : ""}
+          </p>
+        ) : null}
+        {generations.length > 0 ? (
+          <ul className="text-xs text-(--muted)">
+            {generations.map((g, i) => (
+              <li key={`${g.function_id}-${i}`}>
+                {g.function_id}: {formatTokenCount(g.input_tokens)} in /{" "}
+                {formatTokenCount(g.output_tokens)} out
+                {g.latency_ms != null ? ` · ${g.latency_ms}ms` : ""}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {rec?.pr_url ? (
           <p>
             <span className="text-(--muted)">
@@ -285,7 +327,7 @@ export default async function IncidentDetailPage({
                     className="rounded-lg border border-(--line) p-3"
                   >
                     <div className="font-medium">
-                      #{h.rank} {causeLabel(h.cause_type)}
+                      #{h.rank} {h.headline}
                       {h.suspect_deploy ? (
                         <span className="ml-2 font-mono text-xs text-(--accent)">
                           {shortSha(h.suspect_deploy)}

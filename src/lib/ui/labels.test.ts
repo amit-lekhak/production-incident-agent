@@ -13,23 +13,23 @@ import { formatRelativeTime, formatOpenedAgo } from "./time";
 describe("operatorSummary", () => {
   it("replaces metric dumps with plain prose", () => {
     const out = operatorSummary({
-      cause: "n_plus_one",
+      cause: "Checkout awaits catalog.lookup once per cart line",
       action: "revert_pr",
       target: "42623a840643ae3b",
       summary:
         "catalog.lookup avg=13ms lookups/req≈3.0 after deploy 42623a840643; similar: test-resolved → n/a",
     });
     assert.equal(looksLikeDump(out), false);
-    assert.match(out, /N\+1 catalog lookups/);
+    assert.match(out, /catalog\.lookup once per cart line|Checkout awaits/);
     assert.match(out, /42623a8/);
-    assert.doesNotMatch(out, /catalog\.lookup/);
+    assert.doesNotMatch(out, /lookups\/req/);
   });
 
   it("keeps short plain summaries", () => {
     const plain =
       "Catalog lookups spiked after the last deploy. Recommend revert.";
     const out = operatorSummary({
-      cause: "n_plus_one",
+      cause: "Checkout awaits catalog.lookup once per cart line",
       action: "revert_pr",
       target: "abc",
       summary: plain,

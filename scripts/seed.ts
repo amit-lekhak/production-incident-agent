@@ -114,11 +114,11 @@ async function seed() {
   `;
 
   const [hyp] = await sql<{ id: number }[]>`
-    INSERT INTO hypotheses (incident_id, rank, cause_type, suspect_deploy, supporting_tool_names, why)
+    INSERT INTO hypotheses (incident_id, rank, headline, suspect_deploy, supporting_tool_names, why)
     VALUES (
       ${hist!.id}::uuid,
       1,
-      'n_plus_one',
+      'Checkout awaits catalog.lookup once per cart line after N+1 deploy',
       ${badSha},
       ${jsonb(["query_traces", "query_db_timings", "list_deployments", "diff_deploys"])},
       'Catalog span count scaled with cart size after deploy; revert PR restored p95.'

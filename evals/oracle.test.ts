@@ -13,6 +13,12 @@ describe("oracle evals", () => {
     await setupOracleEnv();
   });
   after(async () => {
+    try {
+      const { clearFaults } = await import("../src/lib/sim/faults");
+      await clearFaults();
+    } catch {
+      /* ignore */
+    }
     teardownOracleEnv();
     await sql.end({ timeout: 1 });
   });

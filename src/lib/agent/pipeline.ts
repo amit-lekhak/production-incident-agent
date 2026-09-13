@@ -4,6 +4,7 @@ import {
   setIncidentStatus,
 } from "@/lib/observability/incident-events";
 import { currentTraceId, flushTelemetry } from "@/lib/observability/langfuse";
+import { clearLlmUsage } from "@/lib/observability/llm-usage";
 import { actionLabel, actionTargetLabel } from "@/lib/ui/labels";
 import {
   classifyProviderError,
@@ -152,6 +153,9 @@ export async function runDiagnosisPipeline(
     message: "Diagnosis pipeline started",
   });
 
+  // Reset prior token totals before this run records new generations.
+  await clearLlmUsage(incidentId).catch(() => undefined);
+
   const rt = { serviceId: claimed.service_id, incidentId };
   const hasKey = Boolean(
     process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY,
@@ -228,12 +232,12 @@ export async function runDiagnosisPipeline(
       for (const h of hypotheses.hypotheses) {
         const [row] = await tx<{ id: number }[]>`
           INSERT INTO hypotheses (
-            incident_id, rank, cause_type, suspect_deploy, supporting_tool_names, why
+            incident_id, rank, headline, suspect_deploy, supporting_tool_names, why
           )
           VALUES (
             ${incidentId}::uuid,
             ${h.rank},
-            ${h.cause_type},
+            ${h.headline},
             ${h.suspect_deploy},
             ${jsonb(h.supporting_tool_names)},
             ${h.why}

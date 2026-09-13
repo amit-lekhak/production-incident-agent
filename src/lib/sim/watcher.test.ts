@@ -63,7 +63,10 @@ describe("watcher window", () => {
       assert.equal(latency, undefined);
 
       const closed = results.find(
-        (r) => !r.opened && r.reason.includes("checkout_latency_p95 ok"),
+        (r) =>
+          !r.opened &&
+          (r.reason.includes("checkout_latency_p95 ok") ||
+            /Checkout latency ok/i.test(r.reason)),
       );
       assert.ok(closed, `expected ok reason, got ${JSON.stringify(results)}`);
     } finally {

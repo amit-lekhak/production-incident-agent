@@ -24,11 +24,24 @@ export function buildTools(rt: ToolRuntime) {
         ORDER BY sampled_at DESC
         LIMIT 40
       `;
+      const byName = new Map<string, number[]>();
+      for (const r of rows) {
+        const list = byName.get(r.name) ?? [];
+        list.push(r.value);
+        byName.set(r.name, list);
+      }
+      const summaries = [...byName.entries()].map(([name, values]) => {
+        const latest = values[0] ?? 0;
+        const avg =
+          values.reduce((a, b) => a + b, 0) / Math.max(values.length, 1);
+        return `${displayMetric(name, latest)} (n=${values.length}, avg≈${displayMetric(name, avg).split("=")[1]})`;
+      });
       return {
-        display: rows
-          .map((r) => `${displayMetric(r.name, r.value)} @ ${r.sampled_at}`)
-          .join("; "),
-        rows,
+        display: summaries.join("; ") || "no samples",
+        sampleCount: rows.length,
+        latestByName: Object.fromEntries(
+          [...byName.entries()].map(([name, values]) => [name, values[0] ?? 0]),
+        ),
       };
     },
 
@@ -44,12 +57,14 @@ export function buildTools(rt: ToolRuntime) {
         ORDER BY logged_at DESC
         LIMIT ${limit}
       `;
+      const examples = rows.slice(0, 3).map((r) => `[${r.level}] ${r.message}`);
       return {
-        display: rows
-          .map((r) => `[${r.level}] ${r.message}`)
-          .slice(0, 10)
-          .join(" | "),
-        rows,
+        display:
+          rows.length === 0
+            ? "no logs"
+            : `${rows.length} lines; examples: ${examples.join(" | ")}`,
+        count: rows.length,
+        examples,
       };
     },
 
@@ -83,14 +98,45 @@ export function buildTools(rt: ToolRuntime) {
           (r.spans ?? []).find((s) => s.name === "db.pool.wait")?.durationMs ??
           null,
       }));
+      const n = catalogCounts.length;
+      const avg = (vals: number[]) =>
+        vals.length === 0 ? 0 : vals.reduce((a, b) => a + b, 0) / vals.length;
+      const avgCatalogLookups = avg(catalogCounts.map((c) => c.catalogLookups));
+      const durations = catalogCounts
+        .map((c) => c.durationMs)
+        .sort((a, b) => a - b);
+      const p95DurationMs =
+        durations.length === 0
+          ? 0
+          : durations[
+              Math.min(
+                durations.length - 1,
+                Math.floor(durations.length * 0.95),
+              )
+            ]!;
+      const payMs = catalogCounts
+        .map((c) => c.paymentMs ?? 0)
+        .filter((v) => v > 0);
+      const poolMs = catalogCounts
+        .map((c) => c.poolWaitMs ?? 0)
+        .filter((v) => v > 0);
+      const examples = catalogCounts
+        .slice(0, 2)
+        .map(
+          (c) =>
+            `${c.requestId}: ${c.durationMs}ms, catalog.lookup×${c.catalogLookups}, pay=${c.paymentMs ?? "—"}ms, pool=${c.poolWaitMs ?? "—"}ms`,
+        );
       return {
-        display: catalogCounts
-          .map(
-            (c) =>
-              `${c.requestId}: ${c.durationMs}ms, catalog.lookup×${c.catalogLookups}, pay=${c.paymentMs ?? "—"}ms, pool=${c.poolWaitMs ?? "—"}ms`,
-          )
-          .join("; "),
-        rows: catalogCounts,
+        display:
+          n === 0
+            ? "no traces"
+            : `n=${n} avg catalog.lookup×${avgCatalogLookups.toFixed(1)} p95=${Math.round(p95DurationMs)}ms avgPay=${payMs.length ? Math.round(avg(payMs)) : "—"}ms avgPool=${poolMs.length ? Math.round(avg(poolMs)) : "—"}ms; examples: ${examples.join("; ") || "none"}`,
+        sampleCount: n,
+        avgCatalogLookups,
+        p95DurationMs,
+        avgPaymentMs: payMs.length ? avg(payMs) : 0,
+        avgPoolWaitMs: poolMs.length ? avg(poolMs) : 0,
+        examples: catalogCounts.slice(0, 2),
       };
     },
 
@@ -216,22 +262,23 @@ export function buildTools(rt: ToolRuntime) {
             );
       return {
         display: `catalog.lookup samples=${catalog.length} avg=${avg}ms; total rows=${rows.length}`,
-        rows,
         catalogAvgMs: avg,
         catalogCount: catalog.length,
+        sampleCount: rows.length,
       };
     },
 
     async list_similar_incidents(
-      input: { causeHint?: string; limit?: number } = {},
+      input: { searchHint?: string; limit?: number } = {},
     ) {
       const limit = Math.min(input.limit ?? 5, 10);
+      const hint = input.searchHint?.trim();
       const rows = await sql<
         {
           id: string;
           title: string;
           status: string;
-          cause_type: string | null;
+          headline: string | null;
           recommended_action: string | null;
           summary: string | null;
         }[]
@@ -240,12 +287,12 @@ export function buildTools(rt: ToolRuntime) {
           i.id::text AS id,
           i.title,
           i.status,
-          h.cause_type,
+          h.headline,
           r.recommended_action,
           r.summary
         FROM incidents i
         LEFT JOIN LATERAL (
-          SELECT cause_type FROM hypotheses WHERE incident_id = i.id ORDER BY rank ASC LIMIT 1
+          SELECT headline, why FROM hypotheses WHERE incident_id = i.id ORDER BY rank ASC LIMIT 1
         ) h ON true
         LEFT JOIN LATERAL (
           SELECT recommended_action, summary FROM recommendations WHERE incident_id = i.id ORDER BY created_at DESC LIMIT 1
@@ -253,14 +300,26 @@ export function buildTools(rt: ToolRuntime) {
         WHERE i.service_id = ${rt.serviceId}
           AND i.id <> ${rt.incidentId}::uuid
           AND i.status = 'resolved'
-          ${input.causeHint ? sql`AND (h.cause_type ILIKE ${"%" + input.causeHint + "%"} OR i.title ILIKE ${"%" + input.causeHint + "%"})` : sql``}
+          ${
+            hint
+              ? sql`AND (
+                  h.headline ILIKE ${"%" + hint + "%"}
+                  OR h.why ILIKE ${"%" + hint + "%"}
+                  OR i.title ILIKE ${"%" + hint + "%"}
+                  OR r.summary ILIKE ${"%" + hint + "%"}
+                )`
+              : sql``
+          }
         ORDER BY i.opened_at DESC
         LIMIT ${limit}
       `;
       return {
         display:
           rows
-            .map((r) => `${r.title} → ${r.recommended_action ?? "n/a"}`)
+            .map(
+              (r) =>
+                `${r.headline ?? r.title} → ${r.recommended_action ?? "n/a"}`,
+            )
             .join("; ") || "none",
         rows,
       };

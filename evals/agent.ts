@@ -130,7 +130,7 @@ export async function runAgentCase(c: EvalCase): Promise<AgentCaseResult> {
       pass: score.pass,
       latency_ms: Date.now() - started,
       score,
-      cause: timed.hypotheses.hypotheses[0]?.cause_type,
+      cause: timed.hypotheses.hypotheses[0]?.headline,
       action: timed.recommendation.recommended_action,
     };
   } catch (err) {

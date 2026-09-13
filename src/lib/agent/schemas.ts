@@ -5,13 +5,8 @@ export const hypothesesSchema = z.object({
     .array(
       z.object({
         rank: z.number().int().min(1),
-        cause_type: z.enum([
-          "n_plus_one",
-          "payment_timeout",
-          "error_spike",
-          "pool_exhaustion",
-          "unknown",
-        ]),
+        /** Free-form root cause in one line — not a closed taxonomy. */
+        headline: z.string().min(1),
         suspect_deploy: z.string().nullable(),
         supporting_tool_names: z.array(z.string()),
         why: z.string(),

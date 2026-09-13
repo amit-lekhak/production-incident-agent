@@ -3,7 +3,8 @@ import type { FaultScenario } from "../src/lib/sim/types";
 export type EvalCase = {
   id: string;
   scenario: FaultScenario;
-  expectCause: string;
+  /** Phrases that must appear in headline+why (case-insensitive). */
+  expectHeadlineIncludes: string[];
   expectAction: string;
   expectNotAction?: string;
   expectTarget?: string | "active_sha";
@@ -15,7 +16,7 @@ export const EVAL_CASES: EvalCase[] = [
   {
     id: "n_plus_one_revert_pr",
     scenario: "n_plus_one",
-    expectCause: "n_plus_one",
+    expectHeadlineIncludes: ["catalog", "lookup"],
     expectAction: "revert_pr",
     expectTarget: "active_sha",
     requiredToolGroups: [
@@ -27,7 +28,7 @@ export const EVAL_CASES: EvalCase[] = [
   {
     id: "payment_timeout_disable_flag",
     scenario: "payment_timeout",
-    expectCause: "payment_timeout",
+    expectHeadlineIncludes: ["payment"],
     expectAction: "disable_flag",
     expectNotAction: "revert_pr",
     expectTarget: "payments_v2",
@@ -39,7 +40,7 @@ export const EVAL_CASES: EvalCase[] = [
   {
     id: "error_spike_revert_pr",
     scenario: "error_spike",
-    expectCause: "error_spike",
+    expectHeadlineIncludes: ["error", "metadata", "throw"],
     expectAction: "revert_pr",
     expectTarget: "active_sha",
     requiredToolGroups: [
@@ -51,7 +52,7 @@ export const EVAL_CASES: EvalCase[] = [
   {
     id: "pool_exhaustion_revert_pr",
     scenario: "pool_exhaustion",
-    expectCause: "pool_exhaustion",
+    expectHeadlineIncludes: ["pool"],
     expectAction: "revert_pr",
     expectTarget: "active_sha",
     requiredToolGroups: [

@@ -9,14 +9,6 @@ const ACTION_LABELS: Record<string, string> = {
   rollback: "Rollback deploy",
 };
 
-const CAUSE_LABELS: Record<string, string> = {
-  n_plus_one: "N+1 catalog lookups",
-  payment_timeout: "Payments timeout",
-  error_spike: "Error spike",
-  pool_exhaustion: "DB pool exhaustion",
-  unknown: "Unknown cause",
-};
-
 const STATUS_LABELS: Record<string, string> = {
   detected: "Detected",
   investigating: "Investigating",
@@ -75,11 +67,6 @@ export function actionLabel(action: string | null | undefined): string {
   return ACTION_LABELS[action] ?? action.replaceAll("_", " ");
 }
 
-export function causeLabel(cause: string | null | undefined): string {
-  if (!cause) return "Unknown";
-  return CAUSE_LABELS[cause] ?? cause.replaceAll("_", " ");
-}
-
 export function statusLabel(status: string | null | undefined): string {
   if (!status) return "Unknown";
   return STATUS_LABELS[status] ?? status.replaceAll("_", " ");
@@ -117,10 +104,24 @@ export function looksLikeDump(text: string | null | undefined): boolean {
   if (!text) return false;
   const t = text.toLowerCase();
   if (text.length > 220) return true;
-  return DUMP_MARKERS.some((m) => t.includes(m.toLowerCase()));
+  const markerHits = DUMP_MARKERS.filter((m) =>
+    t.includes(m.toLowerCase()),
+  ).length;
+  if (markerHits >= 2) return true;
+  if (
+    markerHits >= 1 &&
+    (t.includes(";") ||
+      t.includes("avg=") ||
+      t.includes("samples=") ||
+      t.includes("lookups/req"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function operatorSummary(input: {
+  /** Free-form root-cause headline (or legacy cause string). */
   cause?: string | null;
   action?: string | null;
   target?: string | null;
@@ -131,24 +132,24 @@ export function operatorSummary(input: {
     return stored;
   }
 
-  const cause = causeLabel(input.cause);
+  const cause = input.cause?.trim() || "an unknown cause";
   const action = actionLabel(input.action);
   const target = actionTargetLabel(input.action, input.target);
 
   if (input.action === "revert_pr" || input.action === "rollback") {
-    return `Likely ${cause}${target && target !== "—" ? ` after ${target}` : ""}. Recommend reverting that deploy.`;
+    return `${cause}${target && target !== "—" ? ` (${target})` : ""}. Recommend reverting that deploy.`;
   }
   if (input.action === "disable_flag") {
-    return `Likely ${cause}. Recommend disabling ${target || "the feature flag"} instead of reverting.`;
+    return `${cause}. Recommend disabling ${target || "the feature flag"} instead of reverting.`;
   }
   if (input.action === "page_human") {
-    return `Likely ${cause}. Confidence is too low to auto-remediate — page on-call.`;
+    return `${cause}. Confidence is too low to auto-remediate — page on-call.`;
   }
   if (input.action === "watch") {
-    return `Likely ${cause}. Keep watching metrics before changing production.`;
+    return `${cause}. Keep watching metrics before changing production.`;
   }
   if (input.action) {
-    return `Likely ${cause}. Recommend: ${action}${target ? ` (${target})` : ""}.`;
+    return `${cause}. Recommend: ${action}${target ? ` (${target})` : ""}.`;
   }
   return stored || "Investigation incomplete.";
 }

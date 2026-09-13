@@ -10,7 +10,7 @@ export type PendingReviewRow = {
   action_target: string;
   confidence: number;
   summary: string;
-  cause_type: string | null;
+  headline: string | null;
   review_id: number;
   pr_number: number | null;
   pr_url: string | null;
@@ -39,7 +39,7 @@ export async function listPendingReviews(
       r.action_target,
       r.confidence,
       r.summary,
-      h.cause_type,
+      h.headline,
       v.id AS review_id,
       r.pr_number,
       r.pr_url,

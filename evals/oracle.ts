@@ -82,7 +82,8 @@ export async function runOracleCase(c: EvalCase) {
   }
 
   const out = await oracleDiagnose(rt);
-  const cause = out.hypotheses.hypotheses[0]?.cause_type;
+  const headline = out.hypotheses.hypotheses[0]?.headline ?? "";
+  const why = out.hypotheses.hypotheses[0]?.why ?? "";
   const action = out.recommendation.recommended_action;
   const target = out.recommendation.action_target;
   const active = await getReleaseProvider().currentDeploy();
@@ -94,8 +95,13 @@ export async function runOracleCase(c: EvalCase) {
         ? target === c.expectTarget
         : true;
 
+  const blob = `${headline}\n${why}`.toLowerCase();
+  const headlineOk = c.expectHeadlineIncludes.some((p) =>
+    blob.includes(p.toLowerCase()),
+  );
+
   const pass =
-    cause === c.expectCause &&
+    headlineOk &&
     action === c.expectAction &&
     targetOk &&
     (c.expectNotAction ? action !== c.expectNotAction : true);
@@ -103,7 +109,7 @@ export async function runOracleCase(c: EvalCase) {
   return {
     id: c.id,
     pass,
-    cause,
+    headline,
     action,
     target,
     confidence: out.recommendation.confidence_0_100,

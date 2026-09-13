@@ -17,6 +17,7 @@ const TEST_FILES = [
   "src/lib/agent/actions.test.ts",
   "src/lib/sim/watcher.test.ts",
   "src/lib/codegraph/query.test.ts",
+  "src/lib/ui/labels.test.ts",
   "evals/oracle.test.ts",
 ];
 

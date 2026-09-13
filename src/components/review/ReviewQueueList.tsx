@@ -3,7 +3,6 @@ import { ReviewActions } from "@/components/review/ReviewActions";
 import {
   actionLabel,
   actionTargetLabel,
-  causeLabel,
   looksLikeDump,
   nextStepHint,
   operatorSummary,
@@ -36,7 +35,7 @@ export function ReviewQueueList({
           row.action_target,
         );
         const summary = operatorSummary({
-          cause: row.cause_type,
+          cause: row.headline,
           action: row.recommended_action,
           target: row.action_target,
           summary: row.summary,
@@ -54,8 +53,13 @@ export function ReviewQueueList({
                 href={`/incidents/${row.incident_id}`}
                 className="font-medium text-(--accent)"
               >
-                {operatorIncidentTitle(row.title)}
+                {row.headline ? row.headline : operatorIncidentTitle(row.title)}
               </Link>
+              {row.headline ? (
+                <div className="mt-1 text-xs text-(--muted)">
+                  Triggered by {operatorIncidentTitle(row.title)}
+                </div>
+              ) : null}
               <div className="mt-1 text-xs text-(--muted)">
                 <time
                   dateTime={row.opened_at}
@@ -73,7 +77,7 @@ export function ReviewQueueList({
                 <div>
                   <dt className="inline text-(--muted)">Likely cause: </dt>
                   <dd className="inline font-medium">
-                    {causeLabel(row.cause_type)}
+                    {row.headline ?? "Unknown"}
                   </dd>
                 </div>
                 <div>
